@@ -174,6 +174,7 @@ export default function DashboardPage() {
             <p className="mt-2 text-sm text-zinc-300">Track weight trends over time.</p>
           </Link>
         </div>
+
       </div>
     </div>
   );
