@@ -3,17 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-
-type Split = "push" | "pull" | "legs" | "core";
-
-type DashboardData = {
-  email: string;
-  workoutCount: number;
-  bodyweightCount: number;
-  latestWorkout: { session_date: string; split: Split } | null;
-  latestBodyweight: { log_date: string; weight_input: number; unit_input: "lb" | "kg" } | null;
-};
+import type { DashboardData } from "@/lib/dashboardTypes";
+import { loadDashboardData } from "@/lib/dashboardService";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -28,79 +19,24 @@ export default function DashboardPage() {
       setLoading(true);
       setMsg(null);
 
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr || !sessionData.session) {
-        if (isMounted) {
-          setMsg("You are not logged in.");
-          setLoading(false);
-          router.replace("/login");
-        }
-        return;
-      }
+      const result = await loadDashboardData();
+      if (!isMounted) return;
 
-      const user = sessionData.session.user;
-      const userId = user.id;
-
-      const [
-        workoutsCountRes,
-        bodyweightCountRes,
-        latestWorkoutRes,
-        latestBodyweightRes,
-      ] = await Promise.all([
-        supabase
-          .from("workout_sessions")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        supabase
-          .from("bodyweight_logs")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        supabase
-          .from("workout_sessions")
-          .select("session_date,split")
-          .eq("user_id", userId)
-          .order("session_date", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("bodyweight_logs")
-          .select("log_date,weight_input,unit_input")
-          .eq("user_id", userId)
-          .order("log_date", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      if (
-        workoutsCountRes.error ||
-        bodyweightCountRes.error ||
-        latestWorkoutRes.error ||
-        latestBodyweightRes.error
-      ) {
-        if (isMounted) {
-          setMsg(
-            workoutsCountRes.error?.message ||
-              bodyweightCountRes.error?.message ||
-              latestWorkoutRes.error?.message ||
-              latestBodyweightRes.error?.message ||
-              "Failed to load dashboard."
-          );
-          setLoading(false);
-        }
-        return;
-      }
-
-      if (isMounted) {
-        setData({
-          email: user.email ?? "Athlete",
-          workoutCount: workoutsCountRes.count ?? 0,
-          bodyweightCount: bodyweightCountRes.count ?? 0,
-          latestWorkout: (latestWorkoutRes.data as DashboardData["latestWorkout"]) ?? null,
-          latestBodyweight:
-            (latestBodyweightRes.data as DashboardData["latestBodyweight"]) ?? null,
-        });
+      if (result.status === "unauthenticated") {
+        setMsg("You are not logged in.");
         setLoading(false);
+        router.replace("/login");
+        return;
       }
+
+      if (result.status === "error") {
+        setMsg(result.message);
+        setLoading(false);
+        return;
+      }
+
+      setData(result.data);
+      setLoading(false);
     })();
 
     return () => {

@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is a [Next.js](https://nextjs.org) gym tracking app.
 
 ## Getting Started
 
@@ -16,7 +16,26 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Architecture
+
+- `app/*/page.tsx` contains thin route shells.
+- `features/*` contains feature-first modules (UI pages/components, types, services, and pure view/summary logic).
+- `lib/*` contains cross-feature shared infrastructure/utilities (for example Supabase client and unit conversion).
+
+Current feature folders:
+
+- `features/log`
+- `features/bodyweight`
+
+## Quality checks
+
+```bash
+npm run lint
+npm run typecheck
+npm run test
+```
+
+A CI workflow runs lint and typecheck on every pull request.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
