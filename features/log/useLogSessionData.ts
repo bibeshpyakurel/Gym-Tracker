@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Unit } from "@/lib/convertWeight";
 import { supabase } from "@/lib/supabaseClient";
-import { getDaysAgo } from "@/features/log/formatters";
+import { getDaysAgo, makeSetKey } from "@/features/log/formatters";
 import type {
   DurationSet,
   Exercise,
@@ -14,16 +14,40 @@ import type {
 type UseLogSessionDataParams = {
   split: Split;
   date: string;
+  isCurrentDate: boolean;
   setMsg: (message: string | null) => void;
 };
 
-export function useLogSessionData({ split, date, setMsg }: UseLogSessionDataParams) {
+type LastWeightedSetSnapshot = {
+  sessionDate: string;
+  reps: number | null;
+  weightInput: number | null;
+  unitInput: Unit | null;
+};
+
+type LastDurationSetSnapshot = {
+  sessionDate: string;
+  durationSeconds: number | null;
+};
+
+export function useLogSessionData({
+  split,
+  date,
+  isCurrentDate,
+  setMsg,
+}: UseLogSessionDataParams) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [lastSessionBySplit, setLastSessionBySplit] = useState<Partial<Record<Split, LastSessionInfo>>>({});
   const [recentSessions, setRecentSessions] = useState<RecentWorkoutSession[]>([]);
   const [weightedForm, setWeightedForm] = useState<Record<string, [WeightedSet, WeightedSet]>>({});
   const [durationForm, setDurationForm] = useState<Record<string, [DurationSet, DurationSet]>>({});
   const [lastModifiedBySetKey, setLastModifiedBySetKey] = useState<Record<string, string>>({});
+  const [lastWeightedSetByKey, setLastWeightedSetByKey] = useState<
+    Record<string, LastWeightedSetSnapshot>
+  >({});
+  const [lastDurationSetByKey, setLastDurationSetByKey] = useState<
+    Record<string, LastDurationSetSnapshot>
+  >({});
 
   const loadLastSessions = useCallback(async () => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -109,6 +133,98 @@ export function useLogSessionData({ split, date, setMsg }: UseLogSessionDataPara
       const rows = (data ?? []) as Exercise[];
       setExercises(rows);
 
+      const weightedExerciseIds = rows
+        .filter((exercise) => exercise.metric_type === "WEIGHTED_REPS")
+        .map((exercise) => exercise.id);
+
+      const durationExerciseIds = rows
+        .filter((exercise) => exercise.metric_type === "DURATION")
+        .map((exercise) => exercise.id);
+
+      const trackedExerciseIds = [...weightedExerciseIds, ...durationExerciseIds];
+
+      if (isCurrentDate && trackedExerciseIds.length > 0) {
+        const { data: priorSessions, error: priorSessionsError } = await supabase
+          .from("workout_sessions")
+          .select("id,session_date")
+          .eq("user_id", sessionData.session.user.id)
+          .eq("split", split)
+          .lt("session_date", date)
+          .order("session_date", { ascending: false })
+          .limit(20);
+
+        if (priorSessionsError || !priorSessions || priorSessions.length === 0) {
+          setLastWeightedSetByKey({});
+          setLastDurationSetByKey({});
+        } else {
+          const sessionDateById = new Map(
+            priorSessions.map((session) => [session.id as string, session.session_date as string])
+          );
+
+          const priorSessionIds = priorSessions.map((session) => session.id as string);
+          const { data: priorSetRows, error: priorSetRowsError } = await supabase
+            .from("workout_sets")
+            .select("session_id,exercise_id,set_number,reps,weight_input,unit_input,duration_seconds")
+            .eq("user_id", sessionData.session.user.id)
+            .in("session_id", priorSessionIds)
+            .in("exercise_id", trackedExerciseIds);
+
+          if (priorSetRowsError || !priorSetRows) {
+            setLastWeightedSetByKey({});
+            setLastDurationSetByKey({});
+          } else {
+            const nextLastWeightedSetByKey: Record<string, LastWeightedSetSnapshot> = {};
+            const nextLastDurationSetByKey: Record<string, LastDurationSetSnapshot> = {};
+
+            for (const row of priorSetRows as Array<{
+              session_id: string;
+              exercise_id: string;
+              set_number: number;
+              reps: number | null;
+              weight_input: number | null;
+              unit_input: Unit | null;
+              duration_seconds: number | null;
+            }>) {
+              if (row.set_number !== 1 && row.set_number !== 2) continue;
+
+              const sessionDate = sessionDateById.get(row.session_id);
+              if (!sessionDate) continue;
+
+              const key = makeSetKey(row.exercise_id, row.set_number);
+              if (weightedExerciseIds.includes(row.exercise_id)) {
+                const existing = nextLastWeightedSetByKey[key];
+
+                if (!existing || sessionDate > existing.sessionDate) {
+                  nextLastWeightedSetByKey[key] = {
+                    sessionDate,
+                    reps: row.reps,
+                    weightInput: row.weight_input,
+                    unitInput: row.unit_input,
+                  };
+                }
+              }
+
+              if (durationExerciseIds.includes(row.exercise_id)) {
+                const existing = nextLastDurationSetByKey[key];
+
+                if (!existing || sessionDate > existing.sessionDate) {
+                  nextLastDurationSetByKey[key] = {
+                    sessionDate,
+                    durationSeconds: row.duration_seconds,
+                  };
+                }
+              }
+            }
+
+            setLastWeightedSetByKey(nextLastWeightedSetByKey);
+            setLastDurationSetByKey(nextLastDurationSetByKey);
+          }
+        }
+      } else {
+        setLastWeightedSetByKey({});
+        setLastDurationSetByKey({});
+      }
+
       const weightedDefaults: Record<string, [WeightedSet, WeightedSet]> = {};
       const durationDefaults: Record<string, [DurationSet, DurationSet]> = {};
 
@@ -181,7 +297,7 @@ export function useLogSessionData({ split, date, setMsg }: UseLogSessionDataPara
       setWeightedForm(weightedDefaults);
       setDurationForm(durationDefaults);
     })();
-  }, [date, loadLastSessions, loadRecentSessions, setMsg, split]);
+  }, [date, isCurrentDate, loadLastSessions, loadRecentSessions, setMsg, split]);
 
   return {
     exercises,
@@ -189,6 +305,8 @@ export function useLogSessionData({ split, date, setMsg }: UseLogSessionDataPara
     recentSessions,
     weightedForm,
     durationForm,
+    lastWeightedSetByKey,
+    lastDurationSetByKey,
     lastModifiedBySetKey,
     setWeightedForm,
     setDurationForm,

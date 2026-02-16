@@ -47,19 +47,22 @@ export default function LogWorkoutPage() {
   const [sessionSummaryItems, setSessionSummaryItems] = useState<SessionSummaryItem[]>([]);
   const [sessionSummaryLoading, setSessionSummaryLoading] = useState(false);
   const [summaryUnit, setSummaryUnit] = useState<Unit>("lb");
+  const isCurrentDate = date === today;
   const {
     exercises,
     lastSessionBySplit,
     recentSessions,
     weightedForm,
     durationForm,
+    lastWeightedSetByKey,
+    lastDurationSetByKey,
     lastModifiedBySetKey,
     setWeightedForm,
     setDurationForm,
     setLastModifiedBySetKey,
     loadLastSessions,
     loadRecentSessions,
-  } = useLogSessionData({ split, date, setMsg });
+  } = useLogSessionData({ split, date, isCurrentDate, setMsg });
 
   const grouped = useMemo(() => {
     const map = new Map<string, Exercise[]>();
@@ -893,6 +896,7 @@ export default function LogWorkoutPage() {
                         {[0, 1].map((i) => {
                           const setIdx = i as 0 | 1;
                           const row = weightedForm[ex.id]?.[setIdx];
+                          const lastWeightedSet = lastWeightedSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
                             <div key={i} className="flex flex-wrap items-center gap-2">
                               <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
@@ -945,6 +949,12 @@ export default function LogWorkoutPage() {
                                   Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
                                 </span>
                               )}
+
+                              {isCurrentDate && lastWeightedSet && (
+                                <span className="text-xs text-amber-200/90">
+                                  Previous Performance: {lastWeightedSet.weightInput ?? "-"} {lastWeightedSet.unitInput ?? "lb"} × {lastWeightedSet.reps ?? "-"} reps · {formatLastSessionDate(lastWeightedSet.sessionDate)}
+                                </span>
+                              )}
                             </div>
                           );
                         })}
@@ -954,6 +964,7 @@ export default function LogWorkoutPage() {
                         {[0, 1].map((i) => {
                           const setIdx = i as 0 | 1;
                           const row = durationForm[ex.id]?.[setIdx];
+                          const lastDurationSet = lastDurationSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
                             <div key={i} className="flex flex-wrap items-center gap-2">
                               <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
@@ -989,6 +1000,12 @@ export default function LogWorkoutPage() {
                               {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
                                 <span className="text-xs text-zinc-500">
                                   Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
+                                </span>
+                              )}
+
+                              {isCurrentDate && lastDurationSet && (
+                                <span className="text-xs text-amber-200/90">
+                                  Previous Performance: {lastDurationSet.durationSeconds ?? "-"}s · {formatLastSessionDate(lastDurationSet.sessionDate)}
                                 </span>
                               )}
                             </div>
