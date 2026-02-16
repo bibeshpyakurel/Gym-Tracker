@@ -91,7 +91,7 @@ export default function DashboardPage() {
 
         {msg && <p className="mt-4 text-sm text-red-300">{msg}</p>}
 
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
           <Link
             href="/log"
             className="rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 transition hover:border-zinc-500 hover:bg-zinc-900"
@@ -108,6 +108,15 @@ export default function DashboardPage() {
             <p className="text-sm text-zinc-400">Consistency</p>
             <h2 className="mt-1 text-xl font-semibold text-white">Update Bodyweight</h2>
             <p className="mt-2 text-sm text-zinc-300">Track weight trends over time.</p>
+          </Link>
+
+          <Link
+            href="/calories"
+            className="rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 transition hover:border-zinc-500 hover:bg-zinc-900"
+          >
+            <p className="text-sm text-zinc-400">Nutrition</p>
+            <h2 className="mt-1 text-xl font-semibold text-white">Log Calories</h2>
+            <p className="mt-2 text-sm text-zinc-300">Track pre and post workout fuel.</p>
           </Link>
         </div>
 

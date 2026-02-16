@@ -63,7 +63,7 @@ export function getBodyweightChartView(
     (_, index) => Number((yMin + index * tickStep).toFixed(1))
   );
 
-  return { chartData, yMin, yMax, yTicks };
+  return { chartData, yMin, yMax, yTicks, rangeStartIso };
 }
 
 export function getBodyweightHistoryView(

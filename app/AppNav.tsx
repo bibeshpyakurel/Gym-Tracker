@@ -14,6 +14,7 @@ export default function AppNav() {
     { href: "/dashboard", label: "Dashboard", emoji: "📊" },
     { href: "/log", label: "Log Workout", emoji: "🏋️" },
     { href: "/bodyweight", label: "Bodyweight", emoji: "⚖️" },
+    { href: "/calories", label: "Calories", emoji: "🍽️" },
   ];
 
   return (

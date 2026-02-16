@@ -1,26 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type Unit } from "@/lib/convertWeight";
 import type {
-  BodyweightLog,
+  CaloriesLog,
   ChartRange,
   HistoryFilterMode,
   PendingDelete,
+  PendingEdit,
   PendingOverwrite,
-} from "@/features/bodyweight/types";
-import { formatWeightFromKg } from "@/features/bodyweight/utils";
+} from "@/features/calories/types";
 import {
-  deleteBodyweightLogForCurrentUser,
+  deleteCaloriesLogForCurrentUser,
   getCurrentUserId,
-  loadBodyweightLogsForCurrentUser,
-  upsertBodyweightEntry,
-} from "@/features/bodyweight/service";
+  loadCaloriesLogsForCurrentUser,
+  updateCaloriesLogForCurrentUser,
+  upsertCaloriesEntry,
+} from "@/features/calories/service";
 import {
-  getBodyweightChartView,
-  getBodyweightHistoryView,
-  getBodyweightSummary,
-} from "@/features/bodyweight/view";
+  getCaloriesChartView,
+  getCaloriesHistoryView,
+  getCaloriesSummary,
+} from "@/features/calories/view";
+import { formatCalories, getTotalCalories } from "@/features/calories/utils";
 import {
   CartesianGrid,
   Line,
@@ -31,23 +32,20 @@ import {
   YAxis,
 } from "recharts";
 
-export default function BodyweightPage() {
+export default function CaloriesPage() {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [date, setDate] = useState(
-    today
-  );
-
-  const [weight, setWeight] = useState("");
-  const [unit, setUnit] = useState<Unit>("lb");
-  const [displayUnit, setDisplayUnit] = useState<Unit>("lb");
+  const [date, setDate] = useState(today);
+  const [preWorkoutCalories, setPreWorkoutCalories] = useState("");
+  const [postWorkoutCalories, setPostWorkoutCalories] = useState("");
   const [chartRange, setChartRange] = useState<ChartRange>("biweekly");
 
-  const [logs, setLogs] = useState<BodyweightLog[]>([]);
+  const [logs, setLogs] = useState<CaloriesLog[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingOverwrite, setPendingOverwrite] = useState<PendingOverwrite | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [visibleHistoryCount, setVisibleHistoryCount] = useState(5);
   const [historyFilterMode, setHistoryFilterMode] = useState<HistoryFilterMode>("range");
   const [historySingleDate, setHistorySingleDate] = useState(today);
@@ -55,7 +53,7 @@ export default function BodyweightPage() {
   const [historyEndDate, setHistoryEndDate] = useState("");
 
   async function loadLogs() {
-    const { logs: loadedLogs, error } = await loadBodyweightLogsForCurrentUser();
+    const { logs: loadedLogs, error } = await loadCaloriesLogsForCurrentUser();
     if (error) {
       setMsg(error);
       return;
@@ -74,18 +72,13 @@ export default function BodyweightPage() {
     };
   }, []);
 
-  const { chartData, yMin, yMax, yTicks, rangeStartIso } = getBodyweightChartView(
-    logs,
-    displayUnit,
-    chartRange
-  );
-  const { latestLog } = getBodyweightSummary(logs, displayUnit);
-  const { avgDisplay } = getBodyweightSummary(
-    logs.filter((log) => log.log_date >= rangeStartIso),
-    displayUnit
+  const { chartData, yMax, rangeStartIso } = getCaloriesChartView(logs, chartRange);
+  const { latestLog } = getCaloriesSummary(logs);
+  const { avgTotal, avgPre, avgPost } = getCaloriesSummary(
+    logs.filter((log) => log.log_date >= rangeStartIso)
   );
   const { visibleLogs, hasMoreHistory, canShowLessHistory, hasActiveHistoryFilter } =
-    getBodyweightHistoryView(
+    getCaloriesHistoryView(
       logs,
       historyFilterMode,
       historySingleDate,
@@ -102,8 +95,8 @@ export default function BodyweightPage() {
     setVisibleHistoryCount(5);
   }
 
-  async function persistWeightEntry(payload: PendingOverwrite) {
-    const error = await upsertBodyweightEntry(payload);
+  async function persistCaloriesEntry(payload: PendingOverwrite) {
+    const error = await upsertCaloriesEntry(payload);
 
     if (error) {
       setMsg(error);
@@ -112,9 +105,10 @@ export default function BodyweightPage() {
     }
 
     setMsg("Saved ✅");
-    setWeight("");
+    setPreWorkoutCalories("");
+    setPostWorkoutCalories("");
     setLoading(false);
-    loadLogs();
+    void loadLogs();
   }
 
   async function save() {
@@ -134,9 +128,21 @@ export default function BodyweightPage() {
       return;
     }
 
-    const weightNum = Number(weight);
-    if (!Number.isFinite(weightNum) || weightNum <= 0) {
-      setMsg("Enter valid weight.");
+    const hasPreValue = preWorkoutCalories.trim().length > 0;
+    const hasPostValue = postWorkoutCalories.trim().length > 0;
+
+    if (!hasPreValue && !hasPostValue) {
+      setMsg("Enter pre-workout and/or post-workout calories.");
+      setLoading(false);
+      return;
+    }
+
+    const preValue = hasPreValue ? Number(preWorkoutCalories) : null;
+    const postValue = hasPostValue ? Number(postWorkoutCalories) : null;
+
+    if ((preValue != null && (!Number.isFinite(preValue) || preValue < 0)) ||
+        (postValue != null && (!Number.isFinite(postValue) || postValue < 0))) {
+      setMsg("Enter valid calories (0 or greater).");
       setLoading(false);
       return;
     }
@@ -144,8 +150,8 @@ export default function BodyweightPage() {
     const payload: PendingOverwrite = {
       userId,
       logDate: date,
-      weightNum,
-      inputUnit: unit,
+      preWorkoutKcal: preValue,
+      postWorkoutKcal: postValue,
     };
 
     const hasEntryForDate = logs.some((log) => log.log_date === date);
@@ -155,7 +161,7 @@ export default function BodyweightPage() {
       return;
     }
 
-    await persistWeightEntry(payload);
+    await persistCaloriesEntry(payload);
   }
 
   async function confirmReplace() {
@@ -164,7 +170,7 @@ export default function BodyweightPage() {
     setMsg(null);
     const payload = pendingOverwrite;
     setPendingOverwrite(null);
-    await persistWeightEntry(payload);
+    await persistCaloriesEntry(payload);
   }
 
   function cancelReplace() {
@@ -172,7 +178,7 @@ export default function BodyweightPage() {
     setMsg("Update cancelled.");
   }
 
-  function requestDeleteLog(log: BodyweightLog) {
+  function requestDeleteLog(log: CaloriesLog) {
     setPendingDelete({ id: log.id, logDate: log.log_date });
   }
 
@@ -184,7 +190,7 @@ export default function BodyweightPage() {
     setLoading(true);
     setMsg(null);
 
-    const { error } = await deleteBodyweightLogForCurrentUser(target.id);
+    const { error } = await deleteCaloriesLogForCurrentUser(target.id);
 
     if (error) {
       setMsg(error);
@@ -194,12 +200,74 @@ export default function BodyweightPage() {
 
     setMsg("Deleted 🗑️");
     setLoading(false);
-    loadLogs();
+    void loadLogs();
   }
 
   function cancelDeleteLog() {
     setPendingDelete(null);
     setMsg("Delete cancelled.");
+  }
+
+  function requestEditLog(log: CaloriesLog) {
+    setPendingEdit({
+      id: log.id,
+      originalLogDate: log.log_date,
+      newLogDate: log.log_date,
+      preWorkoutCalories:
+        log.pre_workout_kcal != null ? String(Math.round(log.pre_workout_kcal)) : "",
+      postWorkoutCalories:
+        log.post_workout_kcal != null ? String(Math.round(log.post_workout_kcal)) : "",
+    });
+  }
+
+  function cancelEditLog() {
+    setPendingEdit(null);
+    setMsg("Edit cancelled.");
+  }
+
+  async function confirmEditLog() {
+    if (!pendingEdit) return;
+
+    if (pendingEdit.newLogDate > today) {
+      setMsg("Future log dates are not allowed.");
+      return;
+    }
+
+    const hasPreValue = pendingEdit.preWorkoutCalories.trim().length > 0;
+    const hasPostValue = pendingEdit.postWorkoutCalories.trim().length > 0;
+    if (!hasPreValue && !hasPostValue) {
+      setMsg("Enter pre-workout and/or post-workout calories.");
+      return;
+    }
+
+    const preValue = hasPreValue ? Number(pendingEdit.preWorkoutCalories) : null;
+    const postValue = hasPostValue ? Number(pendingEdit.postWorkoutCalories) : null;
+
+    if ((preValue != null && (!Number.isFinite(preValue) || preValue < 0)) ||
+        (postValue != null && (!Number.isFinite(postValue) || postValue < 0))) {
+      setMsg("Enter valid calories (0 or greater).");
+      return;
+    }
+
+    setLoading(true);
+    setMsg(null);
+
+    const error = await updateCaloriesLogForCurrentUser(pendingEdit.id, {
+      logDate: pendingEdit.newLogDate,
+      preWorkoutKcal: preValue,
+      postWorkoutKcal: postValue,
+    });
+
+    if (error) {
+      setLoading(false);
+      setMsg(error);
+      return;
+    }
+
+    setPendingEdit(null);
+    setLoading(false);
+    setMsg("Updated calories log ✅");
+    void loadLogs();
   }
 
   return (
@@ -210,111 +278,59 @@ export default function BodyweightPage() {
       </div>
 
       <div className="relative z-10 mx-auto w-full max-w-5xl px-6 py-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/80">Bodyweight Tracking</p>
-        <h1 className="mt-3 text-4xl font-bold text-white">Own Your Progress</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/80">Calories Tracking</p>
+        <h1 className="mt-3 text-4xl font-bold text-white">Fuel Your Training</h1>
         <p className="mt-2 max-w-2xl text-zinc-300">
-          Track your weight consistently, spot trends early, and stay focused on long-term gains.
+          Track pre-workout and post-workout calories to improve consistency, recovery, and performance.
         </p>
 
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-2xl border border-zinc-700/80 bg-zinc-900/70 p-4 backdrop-blur-sm">
             <p className="text-xs uppercase tracking-wide text-zinc-400">Total Logs</p>
             <p className="mt-2 text-2xl font-semibold text-white">{logs.length}</p>
           </div>
           <div className="rounded-2xl border border-zinc-700/80 bg-zinc-900/70 p-4 backdrop-blur-sm">
-            <p className="text-xs uppercase tracking-wide text-zinc-400">Latest Entry</p>
+            <p className="text-xs uppercase tracking-wide text-zinc-400">Latest Total</p>
             <p className="mt-2 text-2xl font-semibold text-white">
-              {latestLog ? `${formatWeightFromKg(Number(latestLog.weight_kg || 0), displayUnit)} ${displayUnit}` : "—"}
+              {latestLog ? `${formatCalories(getTotalCalories(latestLog.pre_workout_kcal, latestLog.post_workout_kcal))} kcal` : "—"}
             </p>
           </div>
           <div className="rounded-2xl border border-zinc-700/80 bg-zinc-900/70 p-4 backdrop-blur-sm">
-            <p className="text-xs uppercase tracking-wide text-zinc-400">Average ({displayUnit})</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{avgDisplay ?? "—"}</p>
+            <p className="text-xs uppercase tracking-wide text-zinc-400">Average Pre</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{avgPre != null ? `${formatCalories(avgPre)} kcal` : "—"}</p>
+          </div>
+          <div className="rounded-2xl border border-zinc-700/80 bg-zinc-900/70 p-4 backdrop-blur-sm">
+            <p className="text-xs uppercase tracking-wide text-zinc-400">Average Post</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{avgPost != null ? `${formatCalories(avgPost)} kcal` : "—"}</p>
+          </div>
+          <div className="rounded-2xl border border-zinc-700/80 bg-zinc-900/70 p-4 backdrop-blur-sm">
+            <p className="text-xs uppercase tracking-wide text-zinc-400">Average Total</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{avgTotal != null ? `${formatCalories(avgTotal)} kcal` : "—"}</p>
           </div>
         </div>
 
         <div className="mt-6 rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 backdrop-blur-md">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Bodyweight Trend</h2>
-              <p className="mt-1 text-sm text-zinc-400">Date vs Weight</p>
-            </div>
-
-            <div className="inline-flex rounded-lg border border-zinc-700 bg-zinc-950/70 p-1">
-              <button
-                onClick={() => setDisplayUnit("kg")}
-                className={`rounded-md px-3 py-1 text-sm transition ${
-                  displayUnit === "kg"
-                    ? "bg-amber-300 text-zinc-900"
-                    : "text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                kg
-              </button>
-              <button
-                onClick={() => setDisplayUnit("lb")}
-                className={`rounded-md px-3 py-1 text-sm transition ${
-                  displayUnit === "lb"
-                    ? "bg-amber-300 text-zinc-900"
-                    : "text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                lb
-              </button>
+              <h2 className="text-lg font-semibold text-white">Calories Trend</h2>
+              <p className="mt-1 text-sm text-zinc-400">Total calories by date</p>
             </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => setChartRange("biweekly")}
-              className={`rounded-md px-3 py-1 text-sm transition ${
-                chartRange === "biweekly"
-                  ? "bg-amber-300 text-zinc-900"
-                  : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              Biweekly
-            </button>
-            <button
-              onClick={() => setChartRange("1m")}
-              className={`rounded-md px-3 py-1 text-sm transition ${
-                chartRange === "1m"
-                  ? "bg-amber-300 text-zinc-900"
-                  : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              1M
-            </button>
-            <button
-              onClick={() => setChartRange("3m")}
-              className={`rounded-md px-3 py-1 text-sm transition ${
-                chartRange === "3m"
-                  ? "bg-amber-300 text-zinc-900"
-                  : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              3M
-            </button>
-            <button
-              onClick={() => setChartRange("6m")}
-              className={`rounded-md px-3 py-1 text-sm transition ${
-                chartRange === "6m"
-                  ? "bg-amber-300 text-zinc-900"
-                  : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              6M
-            </button>
-            <button
-              onClick={() => setChartRange("1y")}
-              className={`rounded-md px-3 py-1 text-sm transition ${
-                chartRange === "1y"
-                  ? "bg-amber-300 text-zinc-900"
-                  : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
-              }`}
-            >
-              1Y
-            </button>
+            {(["biweekly", "1m", "3m", "6m", "1y"] as ChartRange[]).map((range) => (
+              <button
+                key={range}
+                onClick={() => setChartRange(range)}
+                className={`rounded-md px-3 py-1 text-sm transition ${
+                  chartRange === range
+                    ? "bg-amber-300 text-zinc-900"
+                    : "border border-zinc-700 bg-zinc-950/70 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                {range === "biweekly" ? "Biweekly" : range.toUpperCase()}
+              </button>
+            ))}
           </div>
 
           <div className="mt-4 h-72 w-full">
@@ -337,9 +353,7 @@ export default function BodyweightPage() {
                     tickLine={false}
                     axisLine={{ stroke: "#52525b" }}
                     width={56}
-                    domain={[yMin, yMax]}
-                    ticks={yTicks}
-                    tickFormatter={(value: number) => value.toFixed(1)}
+                    domain={[0, yMax]}
                   />
                   <Tooltip
                     contentStyle={{
@@ -349,26 +363,15 @@ export default function BodyweightPage() {
                     }}
                     labelStyle={{ color: "#e4e4e7" }}
                     formatter={(value: number | string | undefined) => {
-                      const numericValue =
-                        typeof value === "number"
-                          ? value
-                          : Number(value ?? 0);
-
-                      return [`${numericValue.toFixed(1)} ${displayUnit}`, "Bodyweight"] as const;
+                      const numericValue = typeof value === "number" ? value : Number(value ?? 0);
+                      return [`${formatCalories(numericValue)} kcal`, "Total"] as const;
                     }}
                     labelFormatter={(label, payload) => {
                       const logDate = payload?.[0]?.payload?.logDate;
                       return logDate || label;
                     }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="weight"
-                    stroke="#fcd34d"
-                    strokeWidth={3}
-                    dot={{ r: 3, fill: "#fcd34d" }}
-                    activeDot={{ r: 5 }}
-                  />
+                  <Line type="monotone" dataKey="total" stroke="#fcd34d" strokeWidth={3} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -378,11 +381,9 @@ export default function BodyweightPage() {
         <div className="mt-6 rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 backdrop-blur-md">
           <h2 className="text-lg font-semibold text-white">Log Today</h2>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto_auto] sm:items-end">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
             <div>
-              <label htmlFor="log-date" className="mb-1 block text-sm text-zinc-300">
-                Date
-              </label>
+              <label htmlFor="log-date" className="mb-1 block text-sm text-zinc-300">Date</label>
               <input
                 id="log-date"
                 type="date"
@@ -393,31 +394,27 @@ export default function BodyweightPage() {
             </div>
 
             <div>
-              <label htmlFor="weight" className="mb-1 block text-sm text-zinc-300">
-                Weight
-              </label>
+              <label htmlFor="pre-calories" className="mb-1 block text-sm text-zinc-300">Pre-workout kcal</label>
               <input
-                id="weight"
+                id="pre-calories"
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                placeholder="Weight"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
+                placeholder="e.g. 300"
+                inputMode="numeric"
+                value={preWorkoutCalories}
+                onChange={(e) => setPreWorkoutCalories(e.target.value)}
               />
             </div>
 
             <div>
-              <label htmlFor="unit" className="mb-1 block text-sm text-zinc-300">
-                Unit
-              </label>
-              <select
-                id="unit"
+              <label htmlFor="post-calories" className="mb-1 block text-sm text-zinc-300">Post-workout kcal</label>
+              <input
+                id="post-calories"
                 className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                value={unit}
-                onChange={(e) => setUnit(e.target.value as Unit)}
-              >
-                <option value="lb">lb</option>
-                <option value="kg">kg</option>
-              </select>
+                placeholder="e.g. 550"
+                inputMode="numeric"
+                value={postWorkoutCalories}
+                onChange={(e) => setPostWorkoutCalories(e.target.value)}
+              />
             </div>
 
             <button
@@ -511,19 +508,32 @@ export default function BodyweightPage() {
               <p className="text-sm text-zinc-400">No entries found for the selected date filter.</p>
             )}
 
-            {visibleLogs.map((l) => (
+            {visibleLogs.map((log) => (
               <div
-                key={l.id}
+                key={log.id}
                 className="flex items-center justify-between rounded-xl border border-zinc-700/80 bg-zinc-950/60 px-4 py-3"
               >
-                <span className="text-sm text-zinc-300">{l.log_date}</span>
+                <div>
+                  <span className="text-sm text-zinc-300">{log.log_date}</span>
+                  <p className="text-xs text-zinc-500">
+                    Pre: {formatCalories(log.pre_workout_kcal)} kcal · Post: {formatCalories(log.post_workout_kcal)} kcal
+                  </p>
+                </div>
                 <div className="flex items-center gap-3">
                   <span className="font-medium text-white">
-                    {formatWeightFromKg(Number(l.weight_kg || 0), displayUnit)} {displayUnit}
+                    Total: {formatCalories(getTotalCalories(log.pre_workout_kcal, log.post_workout_kcal))} kcal
                   </span>
                   <button
                     type="button"
-                    onClick={() => requestDeleteLog(l)}
+                    onClick={() => requestEditLog(log)}
+                    disabled={loading}
+                    className="rounded-md border border-zinc-500/70 px-2 py-1 text-xs font-medium text-zinc-200 transition hover:bg-zinc-700/40 disabled:opacity-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestDeleteLog(log)}
                     disabled={loading}
                     className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
                   >
@@ -564,7 +574,7 @@ export default function BodyweightPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300/80">Confirm Replace</p>
-            <h3 className="mt-2 text-xl font-semibold text-white">Replace existing bodyweight log?</h3>
+            <h3 className="mt-2 text-xl font-semibold text-white">Replace existing calories log?</h3>
             <p className="mt-2 text-sm text-zinc-300">
               You already have an entry for <span className="font-semibold text-white">{pendingOverwrite.logDate}</span>. Do you want to replace it with this new value?
             </p>
@@ -593,7 +603,7 @@ export default function BodyweightPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300/80">Confirm Delete</p>
-            <h3 className="mt-2 text-xl font-semibold text-white">Delete bodyweight log?</h3>
+            <h3 className="mt-2 text-xl font-semibold text-white">Delete calories log?</h3>
             <p className="mt-2 text-sm text-zinc-300">
               This will remove your entry for <span className="font-semibold text-white">{pendingDelete.logDate}</span> from history and charts.
             </p>
@@ -612,6 +622,99 @@ export default function BodyweightPage() {
                 className="rounded-md bg-gradient-to-r from-red-400 via-rose-400 to-orange-400 px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:brightness-110"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300/80">Edit Calories Log</p>
+            <h3 className="mt-2 text-xl font-semibold text-white">Update date and calories</h3>
+            <p className="mt-2 text-sm text-zinc-300">
+              Adjust this entry while keeping your daily tracking accurate.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label htmlFor="edit-calories-date" className="mb-1 block text-sm text-zinc-300">Date</label>
+                <input
+                  id="edit-calories-date"
+                  type="date"
+                  value={pendingEdit.newLogDate}
+                  max={today}
+                  onChange={(e) =>
+                    setPendingEdit((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            newLogDate: e.target.value,
+                          }
+                        : prev
+                    )
+                  }
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="edit-pre-calories" className="mb-1 block text-sm text-zinc-300">Pre-workout kcal</label>
+                <input
+                  id="edit-pre-calories"
+                  value={pendingEdit.preWorkoutCalories}
+                  inputMode="numeric"
+                  onChange={(e) =>
+                    setPendingEdit((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            preWorkoutCalories: e.target.value,
+                          }
+                        : prev
+                    )
+                  }
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="edit-post-calories" className="mb-1 block text-sm text-zinc-300">Post-workout kcal</label>
+                <input
+                  id="edit-post-calories"
+                  value={pendingEdit.postWorkoutCalories}
+                  inputMode="numeric"
+                  onChange={(e) =>
+                    setPendingEdit((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            postWorkoutCalories: e.target.value,
+                          }
+                        : prev
+                    )
+                  }
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancelEditLog}
+                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmEditLog()}
+                disabled={loading}
+                className="rounded-md bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:brightness-110 disabled:opacity-60"
+              >
+                Save Changes
               </button>
             </div>
           </div>
