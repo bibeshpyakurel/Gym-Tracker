@@ -381,20 +381,21 @@ export default function CaloriesPage() {
                     domain={[0, yMax]}
                   />
                   <Tooltip
+                    payloadUniqBy={(entry) => entry.dataKey}
                     contentStyle={{
                       backgroundColor: "#18181b",
                       border: "1px solid #3f3f46",
                       borderRadius: "10px",
                     }}
                     labelStyle={{ color: "#e4e4e7" }}
-                    formatter={(value: number | string | undefined, name: string | number) => {
+                    formatter={(value: number | string | undefined, name?: string | number) => {
                       const numericValue = typeof value === "number" ? value : Number(value ?? 0);
                       const labelByKey: Record<string, string> = {
                         total: "Total",
                         preWorkout: "Pre",
                         postWorkout: "Post",
                       };
-                      const key = String(name);
+                      const key = String(name ?? "total");
                       return [`${formatCalories(numericValue)} kcal`, labelByKey[key] ?? key] as const;
                     }}
                     labelFormatter={(label, payload) => {
@@ -415,7 +416,7 @@ export default function CaloriesPage() {
                     }}
                     wrapperStyle={{ color: "#d4d4d8", fontSize: "12px" }}
                   />
-                  <Area type="monotone" dataKey="total" fill="url(#caloriesTotalAreaFill)" stroke="none" />
+                  <Area type="monotone" dataKey="total" fill="url(#caloriesTotalAreaFill)" stroke="none" legendType="none" />
                   <Line
                     type="monotone"
                     dataKey="preWorkout"

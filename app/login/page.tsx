@@ -38,7 +38,8 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace("/dashboard");
+    const launchAnimationEnabled = localStorage.getItem("launch_animation_enabled") !== "false";
+    router.replace(launchAnimationEnabled ? "/launch" : "/dashboard");
   }
 
   const isError = !!msg?.toLowerCase().includes("failed");

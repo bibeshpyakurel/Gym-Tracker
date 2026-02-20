@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { toKg, type Unit } from "@/lib/convertWeight";
 import {
@@ -47,6 +47,15 @@ export default function LogWorkoutPage() {
   const [sessionSummaryItems, setSessionSummaryItems] = useState<SessionSummaryItem[]>([]);
   const [sessionSummaryLoading, setSessionSummaryLoading] = useState(false);
   const [summaryUnit, setSummaryUnit] = useState<Unit>("lb");
+  const [feedbackOverlay, setFeedbackOverlay] = useState<{
+    text: string;
+    tone: "success" | "error";
+  } | null>(null);
+  const [savedWorkoutOverlay, setSavedWorkoutOverlay] = useState<{
+    split: Split;
+    sessionDate: string;
+    setCount: number;
+  } | null>(null);
   const isCurrentDate = date === today;
   const {
     exercises,
@@ -75,6 +84,23 @@ export default function LogWorkoutPage() {
 
   const splitLabel = split.charAt(0).toUpperCase() + split.slice(1);
   const selectedLastSession = lastSessionBySplit[split];
+
+  useEffect(() => {
+    if (!msg) return;
+
+    const tone = /(failed|invalid|not logged|enter|cancelled|not allowed)/i.test(msg)
+      ? "error"
+      : "success";
+    setFeedbackOverlay({ text: msg, tone });
+
+    const timeoutId = window.setTimeout(() => {
+      setFeedbackOverlay(null);
+    }, tone === "error" ? 3800 : 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [msg]);
 
   function updateWeighted(exId: string, setIdx: 0 | 1, patch: Partial<WeightedSet>) {
     setWeightedForm((prev) => {
@@ -281,6 +307,13 @@ export default function LogWorkoutPage() {
       }
     }
 
+    const recordedSetCount = inserts.length + updates.length;
+    if (recordedSetCount === 0) {
+      setLoading(false);
+      setMsg("Add at least one set before saving workout. Include reps + weight (or duration).");
+      return;
+    }
+
     if (inserts.length > 0) {
       const { error: insertErr } = await supabase.from("workout_sets").insert(inserts);
       if (insertErr) {
@@ -309,6 +342,14 @@ export default function LogWorkoutPage() {
     }
 
     setLoading(false);
+    setSavedWorkoutOverlay({
+      split,
+      sessionDate: date,
+      setCount: inserts.length + updates.length,
+    });
+    window.setTimeout(() => {
+      setSavedWorkoutOverlay(null);
+    }, 1700);
     setMsg("Saved workout progress ✅");
     void loadLastSessions();
     void loadRecentSessions();
@@ -850,12 +891,12 @@ export default function LogWorkoutPage() {
                   className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                     split === s
                       ? "bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 text-zinc-900"
-                      : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                      : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                   }`}
                 >
                   <div className="text-center">
                     <div>{s.toUpperCase()}</div>
-                    <div className={`mt-0.5 text-[11px] ${split === s ? "text-zinc-800/80" : "text-zinc-500"}`}>
+                    <div className={`mt-0.5 text-[11px] ${split === s ? "text-black/80" : "text-zinc-500"}`}>
                       {lastSessionBySplit[s] ? `${lastSessionBySplit[s]!.daysAgo}d ago` : "new"}
                     </div>
                   </div>
@@ -874,11 +915,6 @@ export default function LogWorkoutPage() {
             </p>
           </div>
 
-          {msg && (
-            <p className={`mt-4 text-sm ${msg.toLowerCase().includes("saved") ? "text-emerald-300" : "text-red-300"}`}>
-              {msg}
-            </p>
-          )}
         </div>
 
         <div className="mt-6 space-y-6">
@@ -898,62 +934,68 @@ export default function LogWorkoutPage() {
                           const row = weightedForm[ex.id]?.[setIdx];
                           const lastWeightedSet = lastWeightedSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
-                            <div key={i} className="flex flex-wrap items-center gap-2">
-                              <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
+                            <div key={i} className="space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/40 p-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
 
-                              <input
-                                className="w-24 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                placeholder="Reps"
-                                inputMode="numeric"
-                                value={row?.reps ?? ""}
-                                onChange={(e) => updateWeighted(ex.id, setIdx, { reps: e.target.value })}
-                              />
+                                <input
+                                  className="w-24 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                                  placeholder="Reps"
+                                  inputMode="numeric"
+                                  value={row?.reps ?? ""}
+                                  onChange={(e) => updateWeighted(ex.id, setIdx, { reps: e.target.value })}
+                                />
 
-                              <input
-                                className="w-28 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                placeholder="Weight"
-                                inputMode="decimal"
-                                value={row?.weight ?? ""}
-                                onChange={(e) => updateWeighted(ex.id, setIdx, { weight: e.target.value })}
-                              />
+                                <input
+                                  className="w-28 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                                  placeholder="Weight"
+                                  inputMode="decimal"
+                                  value={row?.weight ?? ""}
+                                  onChange={(e) => updateWeighted(ex.id, setIdx, { weight: e.target.value })}
+                                />
 
-                              <select
-                                className="rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                value={row?.unit ?? "lb"}
-                                onChange={(e) => updateWeighted(ex.id, setIdx, { unit: e.target.value as Unit })}
-                              >
-                                <option value="lb">lb</option>
-                                <option value="kg">kg</option>
-                              </select>
+                                <select
+                                  className="rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                                  value={row?.unit ?? "lb"}
+                                  onChange={(e) => updateWeighted(ex.id, setIdx, { unit: e.target.value as Unit })}
+                                >
+                                  <option value="lb">lb</option>
+                                  <option value="kg">kg</option>
+                                </select>
 
-                              <button
-                                type="button"
-                                onClick={() => void saveSingleSet(ex, setIdx)}
-                                disabled={loading}
-                                className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
-                              >
-                                Save
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSingleSet(ex, setIdx)}
+                                  disabled={loading}
+                                  className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
+                                >
+                                  Save
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => requestDeleteSingleSet(ex, setIdx)}
-                                disabled={loading}
-                                className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
-                              >
-                                Delete
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => requestDeleteSingleSet(ex, setIdx)}
+                                  disabled={loading}
+                                  className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
+                                >
+                                  Delete
+                                </button>
 
-                              {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
-                                <span className="text-xs text-zinc-500">
-                                  Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
-                                </span>
-                              )}
+                                {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
+                                  <span className="text-xs text-zinc-500">
+                                    Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
+                                  </span>
+                                )}
+                              </div>
 
                               {isCurrentDate && lastWeightedSet && (
-                                <span className="text-xs text-amber-200/90">
-                                  Previous Performance: {lastWeightedSet.weightInput ?? "-"} {lastWeightedSet.unitInput ?? "lb"} × {lastWeightedSet.reps ?? "-"} reps · {formatLastSessionDate(lastWeightedSet.sessionDate)}
-                                </span>
+                                <div className="rounded-lg border border-amber-300/45 bg-gradient-to-r from-amber-400/12 via-orange-400/10 to-red-400/12 px-3 py-2 text-xs text-amber-100">
+                                  <p className="font-semibold uppercase tracking-[0.12em] text-amber-200/90">Previous Performance</p>
+                                  <p className="mt-1">
+                                    {lastWeightedSet.weightInput ?? "-"} {lastWeightedSet.unitInput ?? "lb"} × {lastWeightedSet.reps ?? "-"} reps
+                                  </p>
+                                  <p className="text-amber-200/80">{formatLastSessionDate(lastWeightedSet.sessionDate)}</p>
+                                </div>
                               )}
                             </div>
                           );
@@ -966,47 +1008,51 @@ export default function LogWorkoutPage() {
                           const row = durationForm[ex.id]?.[setIdx];
                           const lastDurationSet = lastDurationSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
-                            <div key={i} className="flex flex-wrap items-center gap-2">
-                              <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
+                            <div key={i} className="space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/40 p-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
 
-                              <input
-                                className="w-40 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                placeholder="Seconds"
-                                inputMode="numeric"
-                                value={row?.seconds ?? ""}
-                                onChange={(e) => updateDuration(ex.id, setIdx, e.target.value)}
-                              />
+                                <input
+                                  className="w-40 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+                                  placeholder="Seconds"
+                                  inputMode="numeric"
+                                  value={row?.seconds ?? ""}
+                                  onChange={(e) => updateDuration(ex.id, setIdx, e.target.value)}
+                                />
 
-                              <span className="text-sm text-zinc-400">seconds</span>
+                                <span className="text-sm text-zinc-400">seconds</span>
 
-                              <button
-                                type="button"
-                                onClick={() => void saveSingleSet(ex, setIdx)}
-                                disabled={loading}
-                                className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
-                              >
-                                Save
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void saveSingleSet(ex, setIdx)}
+                                  disabled={loading}
+                                  className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
+                                >
+                                  Save
+                                </button>
 
-                              <button
-                                type="button"
-                                onClick={() => requestDeleteSingleSet(ex, setIdx)}
-                                disabled={loading}
-                                className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
-                              >
-                                Delete
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => requestDeleteSingleSet(ex, setIdx)}
+                                  disabled={loading}
+                                  className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
+                                >
+                                  Delete
+                                </button>
 
-                              {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
-                                <span className="text-xs text-zinc-500">
-                                  Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
-                                </span>
-                              )}
+                                {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
+                                  <span className="text-xs text-zinc-500">
+                                    Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
+                                  </span>
+                                )}
+                              </div>
 
                               {isCurrentDate && lastDurationSet && (
-                                <span className="text-xs text-amber-200/90">
-                                  Previous Performance: {lastDurationSet.durationSeconds ?? "-"}s · {formatLastSessionDate(lastDurationSet.sessionDate)}
-                                </span>
+                                <div className="rounded-lg border border-amber-300/45 bg-gradient-to-r from-amber-400/12 via-orange-400/10 to-red-400/12 px-3 py-2 text-xs text-amber-100">
+                                  <p className="font-semibold uppercase tracking-[0.12em] text-amber-200/90">Previous Performance</p>
+                                  <p className="mt-1">{lastDurationSet.durationSeconds ?? "-"}s</p>
+                                  <p className="text-amber-200/80">{formatLastSessionDate(lastDurationSet.sessionDate)}</p>
+                                </div>
                               )}
                             </div>
                           );
@@ -1283,6 +1329,43 @@ export default function LogWorkoutPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {savedWorkoutOverlay && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-zinc-700/80 bg-zinc-900/90 px-7 py-8 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(245,158,11,0.24),transparent_40%),radial-gradient(circle_at_85%_78%,rgba(16,185,129,0.22),transparent_44%),radial-gradient(circle_at_68%_18%,rgba(59,130,246,0.2),transparent_44%)]" />
+
+            <div className="relative z-10">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-400/20 text-3xl text-emerald-300">
+                ✓
+              </div>
+              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/85">
+                Workout Saved
+              </p>
+              <p className="mt-2 text-xl font-bold text-white">
+                {savedWorkoutOverlay.split.toUpperCase()} · {savedWorkoutOverlay.sessionDate}
+              </p>
+              <p className="mt-1 text-sm text-zinc-300">
+                {savedWorkoutOverlay.setCount} set{savedWorkoutOverlay.setCount === 1 ? "" : "s"} recorded.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {feedbackOverlay && (
+        <div className="pointer-events-none fixed inset-x-0 top-24 z-40 flex justify-center px-4">
+          <div
+            className={`max-w-xl rounded-xl border px-4 py-3 text-sm shadow-xl ${
+              feedbackOverlay.tone === "success"
+                ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200"
+                : "border-red-400/60 bg-red-500/15 text-red-200"
+            }`}
+          >
+            {feedbackOverlay.text}
           </div>
         </div>
       )}

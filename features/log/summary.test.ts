@@ -28,12 +28,14 @@ describe("sortSessionSummaryItems", () => {
       weightedItem("Converging Press", [{ setNumber: 1, reps: 10, weightInput: 120 }]),
       weightedItem("Incline Dumbbell Press", [{ setNumber: 1, reps: 8, weightInput: 60 }]),
       weightedItem("Barbell Shoulder Press", [{ setNumber: 1, reps: 6, weightInput: 95 }]),
+      weightedItem("Cable Lateral Raises", [{ setNumber: 1, reps: 12, weightInput: 35 }]),
     ];
 
     const sorted = sortSessionSummaryItems(items, "push");
     expect(sorted.map((item) => item.exerciseName)).toEqual([
       "Incline Dumbbell Press",
       "Barbell Shoulder Press",
+      "Cable Lateral Raises",
       "Converging Press",
     ]);
   });
@@ -47,4 +49,5 @@ describe("sortSessionSummaryItems", () => {
     const [sorted] = sortSessionSummaryItems([item], "legs");
     expect(sorted.setDetails.map((set) => set.setNumber)).toEqual([1, 2]);
   });
+
 });

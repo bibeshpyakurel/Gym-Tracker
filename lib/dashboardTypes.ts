@@ -9,6 +9,7 @@ import type { Unit } from "@/lib/convertWeight";
 
 export type DashboardData = {
   email: string;
+  firstName: string | null;
   latestWorkout: { session_date: string; split: Split } | null;
   latestBodyweight: { log_date: string; weight_input: number; unit_input: Unit } | null;
   latestCalories: {

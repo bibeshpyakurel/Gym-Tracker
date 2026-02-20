@@ -9,6 +9,7 @@ export function sortSessionSummaryItems(items: SessionSummaryItem[], split: Spli
       "tricep pull",
       "triceps pull",
       "barbell shoulder",
+      "cable lateral raise",
       "pec fly",
       "peck fly",
       "overhead tricep",

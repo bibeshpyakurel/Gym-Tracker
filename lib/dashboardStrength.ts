@@ -44,6 +44,16 @@ export type SessionStrengthScore = {
   setSummaryLines: string[];
 };
 
+export type StrengthSetInput = {
+  weight_lb?: number | null;
+  reps?: number | null;
+};
+
+export type StrengthSessionInput = {
+  set1?: StrengthSetInput | null;
+  set2?: StrengthSetInput | null;
+};
+
 export type StrengthTimeSeriesPoint = {
   date: string;
   score: number;
@@ -105,6 +115,60 @@ export function computeSetStrengthScore(weight: number, reps: number): number {
   }
 
   return weight * reps * computeRepMultiplier(reps);
+}
+
+export function computeSetStrength(weight_lb: number, reps: number): number {
+  return computeSetStrengthScore(weight_lb, reps);
+}
+
+function computeSetStrengthFromInput(setInput: StrengthSetInput | null | undefined): number | null {
+  if (!setInput) return null;
+  const { weight_lb, reps } = setInput;
+  if (typeof weight_lb !== "number" || typeof reps !== "number") {
+    return null;
+  }
+  if (!Number.isFinite(weight_lb) || !Number.isFinite(reps)) {
+    return null;
+  }
+
+  return computeSetStrengthScore(weight_lb, reps);
+}
+
+export function computeSessionStrength(session: StrengthSessionInput): number {
+  const set1Strength = computeSetStrengthFromInput(session.set1);
+  const set2Strength = computeSetStrengthFromInput(session.set2);
+
+  if (set1Strength != null && set2Strength != null) {
+    return set1Strength * 0.4 + set2Strength * 0.6;
+  }
+  if (set1Strength != null) return set1Strength;
+  if (set2Strength != null) return set2Strength;
+
+  return 0;
+}
+
+export function computeProgressDelta(previousSessionStrength: number, currentSessionStrength: number): number {
+  if (!Number.isFinite(previousSessionStrength) || !Number.isFinite(currentSessionStrength)) {
+    return 0;
+  }
+
+  if (previousSessionStrength === 0) {
+    if (currentSessionStrength === 0) return 0;
+    return currentSessionStrength > 0 ? 1 : -1;
+  }
+
+  return (currentSessionStrength - previousSessionStrength) / previousSessionStrength;
+}
+
+export function mapProgressDeltaToScore(delta: number): number {
+  if (!Number.isFinite(delta)) return 4;
+  if (delta >= 0.18) return 7;
+  if (delta >= 0.08) return 6;
+  if (delta >= 0.02) return 5;
+  if (delta > -0.02) return 4;
+  if (delta > -0.08) return 3;
+  if (delta > -0.18) return 2;
+  return 1;
 }
 
 export function mapToProgressGroup(muscleGroupOrPrimaryMuscle: string | null | undefined): StrengthProgressGroup {

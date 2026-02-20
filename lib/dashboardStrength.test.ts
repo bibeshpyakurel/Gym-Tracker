@@ -4,9 +4,13 @@ import {
   buildMuscleGroupStrengthDatasets,
   buildSelectedExerciseSeries,
   buildStrengthProgressDatasets,
+  computeProgressDelta,
   computeRepMultiplier,
+  computeSessionStrength,
   computeSessionStrengthByExerciseDate,
+  computeSetStrength,
   computeSetStrengthScore,
+  mapProgressDeltaToScore,
   mapToProgressGroup,
   type StrengthSetLog,
 } from "@/lib/dashboardStrength";
@@ -22,6 +26,49 @@ describe("dashboardStrength", () => {
 
   it("computes per-set strength score", () => {
     expect(computeSetStrengthScore(100, 8)).toBeCloseTo(920, 6);
+  });
+
+  it("computes per-set strength from weight_lb and reps", () => {
+    expect(computeSetStrength(100, 8)).toBeCloseTo(920, 6);
+  });
+
+  it("computes session strength with 40/60 weighting and missing-set fallback", () => {
+    const expectedWeighted = (100 * 8 * 1.15) * 0.4 + (110 * 7 * 1.15) * 0.6;
+
+    expect(
+      computeSessionStrength({
+        set1: { weight_lb: 100, reps: 8 },
+        set2: { weight_lb: 110, reps: 7 },
+      })
+    ).toBeCloseTo(expectedWeighted, 6);
+
+    expect(
+      computeSessionStrength({
+        set1: { weight_lb: 95, reps: 6 },
+      })
+    ).toBeCloseTo(570, 6);
+
+    expect(
+      computeSessionStrength({
+        set2: { weight_lb: 120, reps: 5 },
+      })
+    ).toBeCloseTo(600, 6);
+  });
+
+  it("computes progress delta safely with zero baseline", () => {
+    expect(computeProgressDelta(100, 120)).toBeCloseTo(0.2, 6);
+    expect(computeProgressDelta(0, 0)).toBe(0);
+    expect(computeProgressDelta(0, 100)).toBe(1);
+  });
+
+  it("maps progress delta to 1-7 score thresholds", () => {
+    expect(mapProgressDeltaToScore(0.18)).toBe(7);
+    expect(mapProgressDeltaToScore(0.08)).toBe(6);
+    expect(mapProgressDeltaToScore(0.02)).toBe(5);
+    expect(mapProgressDeltaToScore(0)).toBe(4);
+    expect(mapProgressDeltaToScore(-0.02)).toBe(3);
+    expect(mapProgressDeltaToScore(-0.08)).toBe(2);
+    expect(mapProgressDeltaToScore(-0.18)).toBe(1);
   });
 
   it("computes session strength using 40/60 set weighting", () => {

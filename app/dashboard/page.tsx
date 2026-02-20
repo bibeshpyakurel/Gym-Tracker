@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardData } from "@/lib/dashboardTypes";
 import { loadDashboardData } from "@/lib/dashboardService";
@@ -194,6 +194,21 @@ export default function DashboardPage() {
 
   const selectedExerciseSeries =
     selectedExercise && data ? data.exerciseStrengthSeries[selectedExercise] ?? [] : [];
+  const overallStrengthSeries = useMemo(() => {
+    if (!data) return [];
+
+    const byDate = new Map<string, number>();
+    for (const muscleGroup of data.trackedMuscleGroups) {
+      for (const point of data.muscleGroupStrengthSeries[muscleGroup] ?? []) {
+        const nextScore = (byDate.get(point.date) ?? 0) + point.score;
+        byDate.set(point.date, nextScore);
+      }
+    }
+
+    return Array.from(byDate.entries())
+      .map(([date, score]) => ({ date, score }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [data]);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
@@ -205,9 +220,11 @@ export default function DashboardPage() {
       <div className="relative z-10 mx-auto w-full max-w-5xl px-6 py-10">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/80">Dashboard</p>
-          <h1 className="mt-3 text-4xl font-bold text-white">Welcome Back 💪</h1>
+          <h1 className="mt-3 text-4xl font-bold text-white">
+            {data?.firstName?.trim() ? `Welcome Back, ${data.firstName.trim()} 💪` : "Welcome Back 💪"}
+          </h1>
           <p className="mt-2 max-w-2xl text-zinc-300">
-            {data?.email ? `Signed in as ${data.email}` : "Track progress, stay consistent, and keep building strength."}
+            Track progress, stay consistent, and keep building strength.
           </p>
         </div>
 
@@ -314,6 +331,20 @@ export default function DashboardPage() {
               series={selectedExerciseSeries}
               lineColor="#a78bfa"
               emptyText="No session strength data for this exercise yet."
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 backdrop-blur-md">
+          <h2 className="text-lg font-semibold text-white">Overall Strength Trend</h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            Combined session strength across chest, bicep, tricep, core, quad, hamstring, back, and shoulder.
+          </p>
+          <div className="mt-4 h-72 w-full">
+            <StrengthLineChart
+              series={overallStrengthSeries}
+              lineColor="#22d3ee"
+              emptyText="No overall strength data yet."
             />
           </div>
         </div>

@@ -37,6 +37,33 @@ npm run test
 
 A CI workflow runs lint and typecheck on every pull request.
 
+## Insights AI setup
+
+To enable API-backed AI chat on the Insights page, add these env vars:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4o-mini
+# Optional, for OpenAI-compatible providers (Perplexity-compatible gateways, etc.)
+OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+Then restart the dev server.
+
+## Profile setup (Supabase)
+
+To enable saving first/last name and profile photo in Profile settings:
+
+1. Open Supabase SQL Editor.
+2. Copy the SQL from `db/profiles.sql`.
+3. Run it once.
+
+This creates:
+- `public.profiles` with `first_name`, `last_name`, `avatar_url`
+- RLS policies for profile rows
+- Public storage bucket `profile-avatars`
+- Storage policies so each user can upload/update/delete only their own avatar files
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

@@ -265,7 +265,7 @@ export default function BodyweightPage() {
 
       <div className="relative z-10 mx-auto w-full max-w-5xl px-6 py-10">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/80">Bodyweight Tracking</p>
-        <h1 className="mt-3 text-4xl font-bold text-white">Own Your Progress</h1>
+        <h1 className="mt-3 text-4xl font-bold text-zinc-100 dark:text-white">Own Your Progress</h1>
         <p className="mt-2 max-w-2xl text-zinc-300">
           Track your weight consistently, spot trends early, and stay focused on long-term gains.
         </p>
@@ -408,6 +408,7 @@ export default function BodyweightPage() {
                     tickFormatter={(value: number) => value.toFixed(1)}
                   />
                   <Tooltip
+                    payloadUniqBy={(entry) => entry.dataKey}
                     contentStyle={{
                       backgroundColor: "#18181b",
                       border: "1px solid #3f3f46",

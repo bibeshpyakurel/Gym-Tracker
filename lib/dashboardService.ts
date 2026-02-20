@@ -37,6 +37,7 @@ export async function loadDashboardData(): Promise<DashboardLoadResult> {
     workoutSetsRes,
     workoutSessionsRes,
     exercisesRes,
+    profileRes,
   ] =
     await Promise.all([
       supabase
@@ -74,6 +75,11 @@ export async function loadDashboardData(): Promise<DashboardLoadResult> {
         .from("exercises")
         .select("id,name,muscle_group")
         .eq("user_id", userId),
+      supabase
+        .from("profiles")
+        .select("first_name")
+        .eq("user_id", userId)
+        .maybeSingle(),
     ]);
 
   if (
@@ -169,11 +175,13 @@ export async function loadDashboardData(): Promise<DashboardLoadResult> {
     const category = exerciseCategoryByName.get(exerciseName) ?? "core";
     exerciseNamesByCategory[category].push(exerciseName);
   }
+  const firstName = profileRes.error ? null : ((profileRes.data?.first_name as string | null | undefined) ?? null);
 
   return {
     status: "ok",
     data: {
       email: user.email ?? "Athlete",
+      firstName,
       latestWorkout: (latestWorkoutRes.data as DashboardData["latestWorkout"]) ?? null,
       latestBodyweight: (latestBodyweightRes.data as DashboardData["latestBodyweight"]) ?? null,
       latestCalories: (latestCaloriesRes.data as DashboardData["latestCalories"]) ?? null,
