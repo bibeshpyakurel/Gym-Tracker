@@ -1,8 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseBrowserEnv } from "@/lib/env.client";
+import type { Database } from "@/lib/supabaseTypes";
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+const { url, anonKey } = getSupabaseBrowserEnv();
+
+export const supabase = createClient<Database>(
+  url,
+  anonKey,
   {
     auth: {
       persistSession: true,

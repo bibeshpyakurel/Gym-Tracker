@@ -35,7 +35,7 @@ npm run typecheck
 npm run test
 ```
 
-A CI workflow runs lint and typecheck on every pull request.
+A CI workflow runs lint, typecheck, and unit tests on every pull request.
 
 ## Insights AI setup
 

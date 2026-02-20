@@ -1,5 +1,6 @@
 import "./globals.css";
 import AppNav from "./AppNav";
+import { STORAGE_KEYS } from "@/lib/preferences";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -9,7 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html: `(() => {
   try {
-    const savedTheme = localStorage.getItem("theme");
+    const savedTheme = localStorage.getItem("${STORAGE_KEYS.theme}");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = savedTheme ? savedTheme === "dark" : prefersDark;
     const root = document.documentElement;

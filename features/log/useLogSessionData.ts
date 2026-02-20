@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Unit } from "@/lib/convertWeight";
 import { supabase } from "@/lib/supabaseClient";
+import { TABLES } from "@/lib/dbNames";
 import { getDaysAgo, makeSetKey } from "@/features/log/formatters";
 import type {
   DurationSet,
@@ -59,7 +60,7 @@ export function useLogSessionData({
     const userId = sessionData.session.user.id;
 
     const { data, error } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("split,session_date")
       .eq("user_id", userId)
       .order("session_date", { ascending: false });
@@ -88,7 +89,7 @@ export function useLogSessionData({
 
     const userId = sessionData.session.user.id;
     const { data, error } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("id,split,session_date")
       .eq("user_id", userId)
       .eq("split", split)
@@ -118,7 +119,7 @@ export function useLogSessionData({
       }
 
       const { data, error } = await supabase
-        .from("exercises")
+        .from(TABLES.exercises)
         .select("id,name,split,muscle_group,metric_type,sort_order")
         .eq("split", split)
         .eq("is_active", true)
@@ -145,7 +146,7 @@ export function useLogSessionData({
 
       if (isCurrentDate && trackedExerciseIds.length > 0) {
         const { data: priorSessions, error: priorSessionsError } = await supabase
-          .from("workout_sessions")
+          .from(TABLES.workoutSessions)
           .select("id,session_date")
           .eq("user_id", sessionData.session.user.id)
           .eq("split", split)
@@ -163,7 +164,7 @@ export function useLogSessionData({
 
           const priorSessionIds = priorSessions.map((session) => session.id as string);
           const { data: priorSetRows, error: priorSetRowsError } = await supabase
-            .from("workout_sets")
+            .from(TABLES.workoutSets)
             .select("session_id,exercise_id,set_number,reps,weight_input,unit_input,duration_seconds")
             .eq("user_id", sessionData.session.user.id)
             .in("session_id", priorSessionIds)
@@ -240,7 +241,7 @@ export function useLogSessionData({
       }
 
       const { data: existingSession } = await supabase
-        .from("workout_sessions")
+        .from(TABLES.workoutSessions)
         .select("id")
         .eq("user_id", sessionData.session.user.id)
         .eq("session_date", date)
@@ -249,7 +250,7 @@ export function useLogSessionData({
 
       if (existingSession?.id) {
         const { data: existingSets } = await supabase
-          .from("workout_sets")
+          .from(TABLES.workoutSets)
           .select("*")
           .eq("session_id", existingSession.id)
           .order("set_number", { ascending: true });

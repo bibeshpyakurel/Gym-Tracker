@@ -1,6 +1,7 @@
 import { toKg } from "@/lib/convertWeight";
 import { supabase } from "@/lib/supabaseClient";
 import type { BodyweightLog, PendingOverwrite } from "@/features/bodyweight/types";
+import { TABLES } from "@/lib/dbNames";
 
 export async function loadBodyweightLogsForCurrentUser(): Promise<{
   logs: BodyweightLog[];
@@ -18,7 +19,7 @@ export async function loadBodyweightLogsForCurrentUser(): Promise<{
   const userId = sessionData.session.user.id;
 
   const { data, error } = await supabase
-    .from("bodyweight_logs")
+    .from(TABLES.bodyweightLogs)
     .select("*")
     .eq("user_id", userId)
     .order("log_date", { ascending: false });
@@ -27,12 +28,12 @@ export async function loadBodyweightLogsForCurrentUser(): Promise<{
     return { logs: [], error: error.message };
   }
 
-  return { logs: data ?? [], error: null };
+  return { logs: (data ?? []) as BodyweightLog[], error: null };
 }
 
 export async function upsertBodyweightEntry(payload: PendingOverwrite): Promise<string | null> {
   const { error } = await supabase
-    .from("bodyweight_logs")
+    .from(TABLES.bodyweightLogs)
     .upsert(
       {
         user_id: payload.userId,
@@ -69,9 +70,9 @@ export async function deleteBodyweightLogForCurrentUser(
   }
 
   const { error } = await supabase
-    .from("bodyweight_logs")
+    .from(TABLES.bodyweightLogs)
     .delete()
-    .eq("id", logId)
+    .eq("id", String(logId))
     .eq("user_id", userId);
 
   if (error) {
@@ -99,14 +100,14 @@ export async function updateBodyweightLogForCurrentUser(
   }
 
   const { error } = await supabase
-    .from("bodyweight_logs")
+    .from(TABLES.bodyweightLogs)
     .update({
       log_date: payload.logDate,
       weight_input: payload.weightNum,
       unit_input: payload.inputUnit,
       weight_kg: toKg(payload.weightNum, payload.inputUnit),
     })
-    .eq("id", logId)
+    .eq("id", String(logId))
     .eq("user_id", userId);
 
   return error ? error.message : null;

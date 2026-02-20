@@ -2,22 +2,54 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { CLASS_GRADIENT_PRIMARY } from "@/lib/uiTokens";
+import { TABLES } from "@/lib/dbNames";
+import { ROUTES } from "@/lib/routes";
 
 export default function AppNav() {
   const pathname = usePathname();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const hideNav = pathname === ROUTES.login || pathname === ROUTES.launch;
 
-  if (pathname === "/login" || pathname === "/launch") {
+  useEffect(() => {
+    if (hideNav) return;
+
+    let isMounted = true;
+
+    (async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!isMounted || error || !data.session) return;
+
+      const userId = data.session.user.id;
+      const { data: profileRow, error: profileError } = await supabase
+        .from(TABLES.profiles)
+        .select("avatar_url")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!isMounted || profileError) return;
+      setAvatarUrl((profileRow?.avatar_url as string | null | undefined) ?? null);
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hideNav, pathname]);
+
+  if (hideNav) {
     return null;
   }
 
   const navItems = [
-    { href: "/insights", label: "Insights", emoji: "🧠" },
-    { href: "/dashboard", label: "Dashboard", emoji: "📊" },
-    { href: "/log", label: "Log Workout", emoji: "🏋️" },
-    { href: "/bodyweight", label: "Bodyweight", emoji: "⚖️" },
-    { href: "/calories", label: "Calories", emoji: "🍽️" },
+    { href: ROUTES.insights, label: "Insights", emoji: "🧠" },
+    { href: ROUTES.dashboard, label: "Dashboard", emoji: "📊" },
+    { href: ROUTES.log, label: "Log Workout", emoji: "🏋️" },
+    { href: ROUTES.bodyweight, label: "Bodyweight", emoji: "⚖️" },
+    { href: ROUTES.calories, label: "Calories", emoji: "🍽️" },
   ];
-  const isProfileActive = pathname?.startsWith("/profile");
+  const isProfileActive = pathname?.startsWith(ROUTES.profile);
 
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/80 px-4 py-3 backdrop-blur-md">
@@ -37,7 +69,7 @@ export default function AppNav() {
                 href={item.href}
                 className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   isActive
-                    ? "bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 text-zinc-900"
+                    ? `${CLASS_GRADIENT_PRIMARY} text-zinc-900`
                     : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                 }`}
               >
@@ -50,15 +82,22 @@ export default function AppNav() {
           })}
           </nav>
           <Link
-            href="/profile"
+            href={ROUTES.profile}
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${
               isProfileActive
-                ? "border-amber-300/80 bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 text-zinc-900"
+                ? `border-amber-300/80 ${CLASS_GRADIENT_PRIMARY} text-zinc-900`
                 : "border-zinc-700/70 bg-zinc-900/70 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800"
             }`}
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100/15 text-xs" aria-hidden>
-              👤
+            <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-zinc-100/15 text-xs" aria-hidden>
+              {avatarUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                </>
+              ) : (
+                "👤"
+              )}
             </span>
             <span className="hidden sm:inline">Profile</span>
           </Link>

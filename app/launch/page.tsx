@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { APP_COPY } from "@/lib/appCopy";
+import { TABLES } from "@/lib/dbNames";
+import { ROUTES } from "@/lib/routes";
 
 export default function LaunchPage() {
   const router = useRouter();
@@ -20,13 +23,13 @@ export default function LaunchPage() {
       if (!isMounted) return;
 
       if (error || !data.session) {
-        router.replace("/login");
+        router.replace(ROUTES.login);
         return;
       }
 
       const userId = data.session.user.id;
       const { data: profileData } = await supabase
-        .from("profiles")
+        .from(TABLES.profiles)
         .select("first_name")
         .eq("user_id", userId)
         .maybeSingle();
@@ -35,7 +38,7 @@ export default function LaunchPage() {
 
       setVisible(true);
       exitTimer = window.setTimeout(() => setExiting(true), 1300);
-      routeTimer = window.setTimeout(() => router.replace("/dashboard"), 1800);
+      routeTimer = window.setTimeout(() => router.replace(ROUTES.dashboard), 1800);
     })();
 
     return () => {
@@ -65,14 +68,14 @@ export default function LaunchPage() {
             visible && !exiting ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}
         >
-          Gym Tracker
+          {APP_COPY.appName}
         </h1>
         <p
           className={`mt-4 text-sm text-zinc-300 transition-all duration-500 ${
             visible && !exiting ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"
           }`}
         >
-          Preparing your dashboard...
+          {APP_COPY.launchPreparingText}
         </p>
       </div>
     </div>

@@ -3,6 +3,10 @@
 import { FormEvent, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { STORAGE_KEYS } from "@/lib/preferences";
+import { APP_COPY } from "@/lib/appCopy";
+import { INPUT_BASE_CLASS } from "@/lib/uiClasses";
+import { ROUTES } from "@/lib/routes";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,8 +42,8 @@ export default function LoginPage() {
       return;
     }
 
-    const launchAnimationEnabled = localStorage.getItem("launch_animation_enabled") !== "false";
-    router.replace(launchAnimationEnabled ? "/launch" : "/dashboard");
+    const launchAnimationEnabled = localStorage.getItem(STORAGE_KEYS.launchAnimationEnabled) !== "false";
+    router.replace(launchAnimationEnabled ? ROUTES.launch : ROUTES.dashboard);
   }
 
   const isError = !!msg?.toLowerCase().includes("failed");
@@ -87,9 +91,9 @@ export default function LoginPage() {
 
         <div className="w-full max-w-md rounded-3xl border border-zinc-700/70 bg-zinc-900/70 p-7 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-md">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-            Bibesh Personal Gym Tracker
+            {APP_COPY.loginBrand}
           </p>
-          <h1 className="mt-3 text-3xl font-bold text-white">Welcome back, Bibesh 💪</h1>
+          <h1 className="mt-3 text-3xl font-bold text-white">{APP_COPY.loginHeading} 💪</h1>
           <p className="mt-2 text-sm text-zinc-300">
             Sign in and keep your progress moving. One workout at a time.
           </p>
@@ -100,7 +104,7 @@ export default function LoginPage() {
             </label>
             <input
               id="email"
-              className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+              className={`mt-1 w-full ${INPUT_BASE_CLASS}`}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -111,7 +115,7 @@ export default function LoginPage() {
             </label>
             <input
               id="password"
-              className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950/80 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
+              className={`mt-1 w-full ${INPUT_BASE_CLASS}`}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

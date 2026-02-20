@@ -9,6 +9,7 @@ import {
   type StrengthSetLog,
 } from "@/lib/dashboardStrength";
 import type { DashboardData } from "@/lib/dashboardTypes";
+import { TABLES } from "@/lib/dbNames";
 
 export type DashboardLoadResult =
   | { status: "ok"; data: DashboardData }
@@ -41,42 +42,42 @@ export async function loadDashboardData(): Promise<DashboardLoadResult> {
   ] =
     await Promise.all([
       supabase
-        .from("workout_sessions")
+        .from(TABLES.workoutSessions)
         .select("session_date,split")
         .eq("user_id", userId)
         .order("session_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("bodyweight_logs")
+        .from(TABLES.bodyweightLogs)
         .select("log_date,weight_input,unit_input")
         .eq("user_id", userId)
         .order("log_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("calories_logs")
+        .from(TABLES.caloriesLogs)
         .select("log_date,pre_workout_kcal,post_workout_kcal")
         .eq("user_id", userId)
         .order("log_date", { ascending: false })
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("workout_sets")
+        .from(TABLES.workoutSets)
         .select("session_id,exercise_id,set_number,reps,weight_input")
         .eq("user_id", userId)
         .not("reps", "is", null)
         .not("weight_input", "is", null),
       supabase
-        .from("workout_sessions")
+        .from(TABLES.workoutSessions)
         .select("id,session_date")
         .eq("user_id", userId),
       supabase
-        .from("exercises")
+        .from(TABLES.exercises)
         .select("id,name,muscle_group")
         .eq("user_id", userId),
       supabase
-        .from("profiles")
+        .from(TABLES.profiles)
         .select("first_name")
         .eq("user_id", userId)
         .maybeSingle(),

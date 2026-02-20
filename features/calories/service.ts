@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabaseClient";
 import type { CaloriesLog, PendingOverwrite } from "@/features/calories/types";
+import { TABLES } from "@/lib/dbNames";
 
 export async function getCurrentUserId(): Promise<{ userId: string | null; error: string | null }> {
   const { data: sessionData, error } = await supabase.auth.getSession();
@@ -24,7 +25,7 @@ export async function loadCaloriesLogsForCurrentUser(): Promise<{
   }
 
   const { data, error } = await supabase
-    .from("calories_logs")
+    .from(TABLES.caloriesLogs)
     .select("*")
     .eq("user_id", userId)
     .order("log_date", { ascending: false });
@@ -38,7 +39,7 @@ export async function loadCaloriesLogsForCurrentUser(): Promise<{
 
 export async function upsertCaloriesEntry(payload: PendingOverwrite): Promise<string | null> {
   const { error } = await supabase
-    .from("calories_logs")
+    .from(TABLES.caloriesLogs)
     .upsert(
       {
         user_id: payload.userId,
@@ -65,9 +66,9 @@ export async function deleteCaloriesLogForCurrentUser(
   }
 
   const { error } = await supabase
-    .from("calories_logs")
+    .from(TABLES.caloriesLogs)
     .delete()
-    .eq("id", logId)
+    .eq("id", String(logId))
     .eq("user_id", userId);
 
   if (error) {
@@ -95,13 +96,13 @@ export async function updateCaloriesLogForCurrentUser(
   }
 
   const { error } = await supabase
-    .from("calories_logs")
+    .from(TABLES.caloriesLogs)
     .update({
       log_date: payload.logDate,
       pre_workout_kcal: payload.preWorkoutKcal,
       post_workout_kcal: payload.postWorkoutKcal,
     })
-    .eq("id", logId)
+    .eq("id", String(logId))
     .eq("user_id", userId);
 
   return error ? error.message : null;

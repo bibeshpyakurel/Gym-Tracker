@@ -7,6 +7,7 @@ import {
 import { buildInsightsView } from "@/lib/insightsView";
 import type { InsightMetricPoint, InsightsLoadResult } from "@/lib/insightsTypes";
 import { toKg } from "@/lib/convertWeight";
+import { TABLES } from "@/lib/dbNames";
 
 export async function loadInsightsData(): Promise<InsightsLoadResult> {
   const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
@@ -23,31 +24,31 @@ export async function loadInsightsData(): Promise<InsightsLoadResult> {
 
   const [bodyweightRes, caloriesRes, workoutSetsRes, workoutSessionsRes, exercisesRes, profileRes] = await Promise.all([
     supabase
-      .from("bodyweight_logs")
+      .from(TABLES.bodyweightLogs)
       .select("log_date,weight_input,unit_input,weight_kg")
       .eq("user_id", userId)
       .order("log_date", { ascending: true }),
     supabase
-      .from("calories_logs")
+      .from(TABLES.caloriesLogs)
       .select("log_date,pre_workout_kcal,post_workout_kcal")
       .eq("user_id", userId)
       .order("log_date", { ascending: true }),
     supabase
-      .from("workout_sets")
+      .from(TABLES.workoutSets)
       .select("session_id,exercise_id,set_number,reps,weight_input")
       .eq("user_id", userId)
       .not("reps", "is", null)
       .not("weight_input", "is", null),
     supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("id,session_date")
       .eq("user_id", userId),
     supabase
-      .from("exercises")
+      .from(TABLES.exercises)
       .select("id,name,muscle_group")
       .eq("user_id", userId),
     supabase
-      .from("profiles")
+      .from(TABLES.profiles)
       .select("first_name")
       .eq("user_id", userId)
       .maybeSingle(),

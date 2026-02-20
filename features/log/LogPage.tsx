@@ -3,14 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { toKg, type Unit } from "@/lib/convertWeight";
+import { TABLES } from "@/lib/dbNames";
 import {
   formatLastSessionDate,
-  formatModified,
   formatSummaryWeight,
   makeSetKey,
 } from "@/features/log/formatters";
 import { sortSessionSummaryItems } from "@/features/log/summary";
 import { useLogSessionData } from "@/features/log/useLogSessionData";
+import WeightedSetRow from "@/features/log/components/WeightedSetRow";
+import DurationSetRow from "@/features/log/components/DurationSetRow";
+import FeedbackOverlay from "@/features/log/components/overlays/FeedbackOverlay";
+import SavedWorkoutOverlay from "@/features/log/components/overlays/SavedWorkoutOverlay";
+import { createDefaultDurationPair, createDefaultWeightedPair, LOG_MESSAGES } from "@/features/log/constants";
+import { CLASS_GRADIENT_PRIMARY } from "@/lib/uiTokens";
+import ConfirmModal from "@/shared/ui/ConfirmModal";
+import GradientButton from "@/shared/ui/GradientButton";
 import type {
   DurationSet,
   Exercise,
@@ -84,6 +92,37 @@ export default function LogWorkoutPage() {
 
   const splitLabel = split.charAt(0).toUpperCase() + split.slice(1);
   const selectedLastSession = lastSessionBySplit[split];
+  const hasAtLeastOneCompleteSet = useMemo(() => {
+    for (const ex of exercises) {
+      if (ex.metric_type === "WEIGHTED_REPS") {
+        const sets = weightedForm[ex.id] ?? createDefaultWeightedPair();
+
+        for (const set of sets) {
+          const repsText = set.reps.trim();
+          const weightText = set.weight.trim();
+          if (!repsText || !weightText) continue;
+
+          const repsNum = Number(repsText);
+          const weightNum = Number(weightText);
+          if (Number.isFinite(repsNum) && repsNum >= 0 && Number.isFinite(weightNum) && weightNum >= 0) {
+            return true;
+          }
+        }
+      } else {
+        const sets = durationForm[ex.id] ?? createDefaultDurationPair();
+        for (const set of sets) {
+          const secText = set.seconds.trim();
+          if (!secText) continue;
+          const secNum = Number(secText);
+          if (Number.isFinite(secNum) && secNum >= 0) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }, [durationForm, exercises, weightedForm]);
 
   useEffect(() => {
     if (!msg) return;
@@ -91,23 +130,23 @@ export default function LogWorkoutPage() {
     const tone = /(failed|invalid|not logged|enter|cancelled|not allowed)/i.test(msg)
       ? "error"
       : "success";
-    setFeedbackOverlay({ text: msg, tone });
+    const showId = window.setTimeout(() => {
+      setFeedbackOverlay({ text: msg, tone });
+    }, 0);
 
-    const timeoutId = window.setTimeout(() => {
+    const hideId = window.setTimeout(() => {
       setFeedbackOverlay(null);
     }, tone === "error" ? 3800 : 2600);
 
     return () => {
-      window.clearTimeout(timeoutId);
+      window.clearTimeout(showId);
+      window.clearTimeout(hideId);
     };
   }, [msg]);
 
   function updateWeighted(exId: string, setIdx: 0 | 1, patch: Partial<WeightedSet>) {
     setWeightedForm((prev) => {
-      const cur = prev[exId] ?? [
-        { reps: "", weight: "", unit: "lb" as Unit },
-        { reps: "", weight: "", unit: "lb" as Unit },
-      ];
+      const cur = prev[exId] ?? createDefaultWeightedPair();
       const next: [WeightedSet, WeightedSet] = [
         { ...cur[0] },
         { ...cur[1] },
@@ -119,7 +158,7 @@ export default function LogWorkoutPage() {
 
   function updateDuration(exId: string, setIdx: 0 | 1, seconds: string) {
     setDurationForm((prev) => {
-      const cur = prev[exId] ?? [{ seconds: "" }, { seconds: "" }];
+      const cur = prev[exId] ?? createDefaultDurationPair();
       const next: [DurationSet, DurationSet] = [{ ...cur[0] }, { ...cur[1] }];
       next[setIdx] = { seconds };
       return { ...prev, [exId]: next };
@@ -128,7 +167,7 @@ export default function LogWorkoutPage() {
 
   function validateSessionDate() {
     if (date > today) {
-      setMsg("Future workout dates are not allowed.");
+      setMsg(LOG_MESSAGES.futureDateNotAllowed);
       return false;
     }
     return true;
@@ -136,7 +175,7 @@ export default function LogWorkoutPage() {
 
   async function ensureSession(userId: string) {
     const { data: sessionRow, error: upsertErr } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .upsert({ user_id: userId, session_date: date, split }, { onConflict: "user_id,session_date,split" })
       .select("id")
       .single();
@@ -159,14 +198,14 @@ export default function LogWorkoutPage() {
     
     if (sessionErr || !sessionData.session) {
       setLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
     const userId = sessionData.session.user.id;
 
     // 1) Upsert/find workout session for date+split
     const { data: sessionRow, error: upsertErr } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .upsert(
           { user_id: userId, session_date: date, split },
           { onConflict: "user_id,session_date,split" }
@@ -184,7 +223,7 @@ export default function LogWorkoutPage() {
     const sessionId = sessionRow.id as string;
 
     const { data: existingSetRows, error: existingSetErr } = await supabase
-      .from("workout_sets")
+      .from(TABLES.workoutSets)
       .select("id,exercise_id,set_number")
       .eq("session_id", sessionId);
 
@@ -310,12 +349,12 @@ export default function LogWorkoutPage() {
     const recordedSetCount = inserts.length + updates.length;
     if (recordedSetCount === 0) {
       setLoading(false);
-      setMsg("Add at least one set before saving workout. Include reps + weight (or duration).");
+      setMsg(LOG_MESSAGES.emptyWorkoutSave);
       return;
     }
 
     if (inserts.length > 0) {
-      const { error: insertErr } = await supabase.from("workout_sets").insert(inserts);
+      const { error: insertErr } = await supabase.from(TABLES.workoutSets).insert(inserts);
       if (insertErr) {
         setLoading(false);
         setMsg(`Failed inserting sets: ${insertErr.message}`);
@@ -324,7 +363,7 @@ export default function LogWorkoutPage() {
     }
 
     if (updates.length > 0) {
-      const { error: updateErr } = await supabase.from("workout_sets").upsert(updates, { onConflict: "id" });
+      const { error: updateErr } = await supabase.from(TABLES.workoutSets).upsert(updates, { onConflict: "id" });
       if (updateErr) {
         setLoading(false);
         setMsg(`Failed updating sets: ${updateErr.message}`);
@@ -333,7 +372,7 @@ export default function LogWorkoutPage() {
     }
 
     if (deleteIds.length > 0) {
-      const { error: deleteErr } = await supabase.from("workout_sets").delete().in("id", deleteIds);
+      const { error: deleteErr } = await supabase.from(TABLES.workoutSets).delete().in("id", deleteIds);
       if (deleteErr) {
         setLoading(false);
         setMsg(`Failed deleting cleared sets: ${deleteErr.message}`);
@@ -350,7 +389,7 @@ export default function LogWorkoutPage() {
     window.setTimeout(() => {
       setSavedWorkoutOverlay(null);
     }, 1700);
-    setMsg("Saved workout progress ✅");
+    setMsg(LOG_MESSAGES.savedWorkout);
     void loadLastSessions();
     void loadRecentSessions();
   }
@@ -364,7 +403,7 @@ export default function LogWorkoutPage() {
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
     if (sessionErr || !sessionData.session) {
       setLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
 
@@ -379,7 +418,7 @@ export default function LogWorkoutPage() {
     const key = makeSetKey(ex.id, setNumber);
 
     const { data: existingSet, error: existingErr } = await supabase
-      .from("workout_sets")
+      .from(TABLES.workoutSets)
       .select("id")
       .eq("session_id", sessionId)
       .eq("exercise_id", ex.id)
@@ -462,7 +501,7 @@ export default function LogWorkoutPage() {
 
     if (!payload) {
       if (existingSet?.id) {
-        const { error: delErr } = await supabase.from("workout_sets").delete().eq("id", existingSet.id);
+        const { error: delErr } = await supabase.from(TABLES.workoutSets).delete().eq("id", existingSet.id);
         if (delErr) {
           setLoading(false);
           setMsg(`Failed deleting set: ${delErr.message}`);
@@ -482,7 +521,7 @@ export default function LogWorkoutPage() {
 
     if (existingSet?.id) {
       const { error: updateErr } = await supabase
-        .from("workout_sets")
+        .from(TABLES.workoutSets)
         .update(payload)
         .eq("id", existingSet.id);
 
@@ -492,7 +531,7 @@ export default function LogWorkoutPage() {
         return;
       }
     } else {
-      const { error: insertErr } = await supabase.from("workout_sets").insert(payload);
+      const { error: insertErr } = await supabase.from(TABLES.workoutSets).insert(payload);
       if (insertErr) {
         setLoading(false);
         setMsg(`Failed saving set: ${insertErr.message}`);
@@ -534,13 +573,13 @@ export default function LogWorkoutPage() {
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
     if (sessionErr || !sessionData.session) {
       setLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
 
     const userId = sessionData.session.user.id;
     const { data: sessionRow, error: sessionLookupErr } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("id")
       .eq("user_id", userId)
       .eq("session_date", date)
@@ -555,7 +594,7 @@ export default function LogWorkoutPage() {
 
     if (sessionRow?.id) {
       const { error: deleteErr } = await supabase
-        .from("workout_sets")
+        .from(TABLES.workoutSets)
         .delete()
         .eq("session_id", sessionRow.id)
         .eq("exercise_id", target.exerciseId)
@@ -611,7 +650,7 @@ export default function LogWorkoutPage() {
     if (!pendingSessionEdit) return;
 
     if (pendingSessionEdit.newDate > today) {
-      setMsg("Future workout dates are not allowed.");
+      setMsg(LOG_MESSAGES.futureDateNotAllowed);
       return;
     }
 
@@ -627,14 +666,14 @@ export default function LogWorkoutPage() {
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
     if (sessionErr || !sessionData.session) {
       setLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
 
     const userId = sessionData.session.user.id;
 
     const { error: updateErr } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .update({ session_date: target.newDate })
       .eq("id", target.id)
       .eq("user_id", userId);
@@ -677,14 +716,14 @@ export default function LogWorkoutPage() {
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
     if (sessionErr || !sessionData.session) {
       setSessionSummaryLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
 
     const userId = sessionData.session.user.id;
 
     const { data: setRows, error: setErr } = await supabase
-      .from("workout_sets")
+      .from(TABLES.workoutSets)
       .select("exercise_id,set_number,reps,weight_input,unit_input,duration_seconds")
       .eq("user_id", userId)
       .eq("session_id", session.id);
@@ -704,7 +743,7 @@ export default function LogWorkoutPage() {
     const exerciseIds = Array.from(new Set((setRows as Array<{ exercise_id: string }>).map((row) => row.exercise_id)));
 
     const { data: exerciseRows, error: exerciseErr } = await supabase
-      .from("exercises")
+      .from(TABLES.exercises)
       .select("id,name,metric_type")
       .in("id", exerciseIds);
 
@@ -792,14 +831,14 @@ export default function LogWorkoutPage() {
     const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
     if (sessionErr || !sessionData.session) {
       setLoading(false);
-      setMsg("You’re not logged in. Go to /login first.");
+      setMsg(LOG_MESSAGES.notLoggedIn);
       return;
     }
 
     const userId = sessionData.session.user.id;
 
     const { error: deleteSetsErr } = await supabase
-      .from("workout_sets")
+      .from(TABLES.workoutSets)
       .delete()
       .eq("session_id", target.id)
       .eq("user_id", userId);
@@ -811,7 +850,7 @@ export default function LogWorkoutPage() {
     }
 
     const { error: deleteSessionErr } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .delete()
       .eq("id", target.id)
       .eq("user_id", userId);
@@ -828,12 +867,9 @@ export default function LogWorkoutPage() {
 
       for (const ex of exercises) {
         if (ex.metric_type === "WEIGHTED_REPS") {
-          weightedDefaults[ex.id] = [
-            { reps: "", weight: "", unit: "lb" },
-            { reps: "", weight: "", unit: "lb" },
-          ];
+          weightedDefaults[ex.id] = createDefaultWeightedPair();
         } else {
-          durationDefaults[ex.id] = [{ seconds: "" }, { seconds: "" }];
+          durationDefaults[ex.id] = createDefaultDurationPair();
         }
       }
 
@@ -888,9 +924,9 @@ export default function LogWorkoutPage() {
                 <button
                   key={s}
                   onClick={() => setSplit(s)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-                    split === s
-                      ? "bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 text-zinc-900"
+              className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                split === s
+                      ? `${CLASS_GRADIENT_PRIMARY} text-zinc-900`
                       : "text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
                   }`}
                 >
@@ -934,70 +970,21 @@ export default function LogWorkoutPage() {
                           const row = weightedForm[ex.id]?.[setIdx];
                           const lastWeightedSet = lastWeightedSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
-                            <div key={i} className="space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/40 p-3">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
-
-                                <input
-                                  className="w-24 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                  placeholder="Reps"
-                                  inputMode="numeric"
-                                  value={row?.reps ?? ""}
-                                  onChange={(e) => updateWeighted(ex.id, setIdx, { reps: e.target.value })}
-                                />
-
-                                <input
-                                  className="w-28 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                  placeholder="Weight"
-                                  inputMode="decimal"
-                                  value={row?.weight ?? ""}
-                                  onChange={(e) => updateWeighted(ex.id, setIdx, { weight: e.target.value })}
-                                />
-
-                                <select
-                                  className="rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                  value={row?.unit ?? "lb"}
-                                  onChange={(e) => updateWeighted(ex.id, setIdx, { unit: e.target.value as Unit })}
-                                >
-                                  <option value="lb">lb</option>
-                                  <option value="kg">kg</option>
-                                </select>
-
-                                <button
-                                  type="button"
-                                  onClick={() => void saveSingleSet(ex, setIdx)}
-                                  disabled={loading}
-                                  className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
-                                >
-                                  Save
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => requestDeleteSingleSet(ex, setIdx)}
-                                  disabled={loading}
-                                  className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
-                                >
-                                  Delete
-                                </button>
-
-                                {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
-                                  <span className="text-xs text-zinc-500">
-                                    Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
-                                  </span>
-                                )}
-                              </div>
-
-                              {isCurrentDate && lastWeightedSet && (
-                                <div className="rounded-lg border border-amber-300/45 bg-gradient-to-r from-amber-400/12 via-orange-400/10 to-red-400/12 px-3 py-2 text-xs text-amber-100">
-                                  <p className="font-semibold uppercase tracking-[0.12em] text-amber-200/90">Previous Performance</p>
-                                  <p className="mt-1">
-                                    {lastWeightedSet.weightInput ?? "-"} {lastWeightedSet.unitInput ?? "lb"} × {lastWeightedSet.reps ?? "-"} reps
-                                  </p>
-                                  <p className="text-amber-200/80">{formatLastSessionDate(lastWeightedSet.sessionDate)}</p>
-                                </div>
-                              )}
-                            </div>
+                            <WeightedSetRow
+                              key={i}
+                              setIndex={setIdx}
+                              exerciseId={ex.id}
+                              row={row}
+                              isCurrentDate={isCurrentDate}
+                              loading={loading}
+                              lastWeightedSet={lastWeightedSet}
+                              lastModified={lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)]}
+                              onUpdateReps={(value) => updateWeighted(ex.id, setIdx, { reps: value })}
+                              onUpdateWeight={(value) => updateWeighted(ex.id, setIdx, { weight: value })}
+                              onUpdateUnit={(value) => updateWeighted(ex.id, setIdx, { unit: value })}
+                              onSave={() => void saveSingleSet(ex, setIdx)}
+                              onDelete={() => requestDeleteSingleSet(ex, setIdx)}
+                            />
                           );
                         })}
                       </div>
@@ -1008,53 +995,18 @@ export default function LogWorkoutPage() {
                           const row = durationForm[ex.id]?.[setIdx];
                           const lastDurationSet = lastDurationSetByKey[makeSetKey(ex.id, setIdx + 1)];
                           return (
-                            <div key={i} className="space-y-2 rounded-xl border border-zinc-700/70 bg-zinc-950/40 p-3">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="w-12 text-sm text-zinc-300">Set {i + 1}</span>
-
-                                <input
-                                  className="w-40 rounded-md border border-zinc-700 bg-zinc-900 p-2 text-zinc-100 outline-none ring-amber-300/70 transition focus:ring-2"
-                                  placeholder="Seconds"
-                                  inputMode="numeric"
-                                  value={row?.seconds ?? ""}
-                                  onChange={(e) => updateDuration(ex.id, setIdx, e.target.value)}
-                                />
-
-                                <span className="text-sm text-zinc-400">seconds</span>
-
-                                <button
-                                  type="button"
-                                  onClick={() => void saveSingleSet(ex, setIdx)}
-                                  disabled={loading}
-                                  className="rounded-md border border-emerald-400/60 px-2 py-1 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
-                                >
-                                  Save
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => requestDeleteSingleSet(ex, setIdx)}
-                                  disabled={loading}
-                                  className="rounded-md border border-red-400/60 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/10 disabled:opacity-50"
-                                >
-                                  Delete
-                                </button>
-
-                                {lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)] && (
-                                  <span className="text-xs text-zinc-500">
-                                    Modified {formatModified(lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)])}
-                                  </span>
-                                )}
-                              </div>
-
-                              {isCurrentDate && lastDurationSet && (
-                                <div className="rounded-lg border border-amber-300/45 bg-gradient-to-r from-amber-400/12 via-orange-400/10 to-red-400/12 px-3 py-2 text-xs text-amber-100">
-                                  <p className="font-semibold uppercase tracking-[0.12em] text-amber-200/90">Previous Performance</p>
-                                  <p className="mt-1">{lastDurationSet.durationSeconds ?? "-"}s</p>
-                                  <p className="text-amber-200/80">{formatLastSessionDate(lastDurationSet.sessionDate)}</p>
-                                </div>
-                              )}
-                            </div>
+                            <DurationSetRow
+                              key={i}
+                              setIndex={setIdx}
+                              row={row}
+                              isCurrentDate={isCurrentDate}
+                              loading={loading}
+                              lastDurationSet={lastDurationSet}
+                              lastModified={lastModifiedBySetKey[makeSetKey(ex.id, setIdx + 1)]}
+                              onUpdateSeconds={(value) => updateDuration(ex.id, setIdx, value)}
+                              onSave={() => void saveSingleSet(ex, setIdx)}
+                              onDelete={() => requestDeleteSingleSet(ex, setIdx)}
+                            />
                           );
                         })}
                       </div>
@@ -1070,12 +1022,17 @@ export default function LogWorkoutPage() {
           <div className="flex justify-center">
             <button
               onClick={save}
-              disabled={loading}
-              className="rounded-md bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 px-5 py-2 font-semibold text-zinc-900 transition hover:brightness-110 disabled:opacity-60"
+              disabled={loading || !hasAtLeastOneCompleteSet}
+              className={`rounded-md px-5 py-2 font-semibold text-zinc-900 transition hover:brightness-110 disabled:opacity-60 ${CLASS_GRADIENT_PRIMARY}`}
             >
               {loading ? "Saving..." : "Save Workout"}
             </button>
           </div>
+          {!hasAtLeastOneCompleteSet && (
+            <p className="mt-3 text-center text-xs text-zinc-400">
+              Enter at least one complete set (reps + weight, or duration) to enable Save Workout.
+            </p>
+          )}
         </div>
 
         <div className="mt-6 rounded-3xl border border-zinc-700/80 bg-zinc-900/70 p-5 backdrop-blur-md">
@@ -1136,63 +1093,35 @@ export default function LogWorkoutPage() {
       </div>
 
       {pendingSessionDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300/80">Confirm Delete</p>
-            <h3 className="mt-2 text-xl font-semibold text-white">Delete workout session?</h3>
-            <p className="mt-2 text-sm text-zinc-300">
-              This will remove your <span className="font-semibold text-white">{pendingSessionDelete.split.toUpperCase()}</span>{" "}
-              session on <span className="font-semibold text-white">{pendingSessionDelete.sessionDate}</span> and all sets in that session.
-            </p>
-
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={cancelDeleteSession}
-                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmDeleteSession()}
-                className="rounded-md bg-gradient-to-r from-red-400 via-rose-400 to-orange-400 px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:brightness-110"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          titleTag="Confirm Delete"
+          title="Delete workout session?"
+          description={
+            <>
+              This will remove your{" "}
+              <span className="font-semibold text-white">{pendingSessionDelete.split.toUpperCase()}</span> session on{" "}
+              <span className="font-semibold text-white">{pendingSessionDelete.sessionDate}</span> and all sets in
+              that session.
+            </>
+          }
+          onCancel={cancelDeleteSession}
+          confirmButton={<GradientButton label="Delete" tone="danger" onClick={() => void confirmDeleteSession()} />}
+        />
       )}
 
       {pendingSetDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300/80">Confirm Delete</p>
-            <h3 className="mt-2 text-xl font-semibold text-white">Delete set?</h3>
-            <p className="mt-2 text-sm text-zinc-300">
+        <ConfirmModal
+          titleTag="Confirm Delete"
+          title="Delete set?"
+          description={
+            <>
               This will remove <span className="font-semibold text-white">{pendingSetDelete.exerciseName}</span> set{" "}
               <span className="font-semibold text-white">{pendingSetDelete.setIdx + 1}</span> from this session.
-            </p>
-
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={cancelDeleteSingleSet}
-                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:bg-zinc-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmDeleteSingleSet()}
-                className="rounded-md bg-gradient-to-r from-red-400 via-rose-400 to-orange-400 px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:brightness-110"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          onCancel={cancelDeleteSingleSet}
+          confirmButton={<GradientButton label="Delete" tone="danger" onClick={() => void confirmDeleteSingleSet()} />}
+        />
       )}
 
       {pendingSessionEdit && (
@@ -1235,14 +1164,11 @@ export default function LogWorkoutPage() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
+              <GradientButton
+                label="Save Date"
                 onClick={() => void confirmEditSessionDate()}
                 disabled={loading}
-                className="rounded-md bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:brightness-110 disabled:opacity-60"
-              >
-                Save Date
-              </button>
+              />
             </div>
           </div>
         </div>
@@ -1265,7 +1191,7 @@ export default function LogWorkoutPage() {
                     onClick={() => setSummaryUnit(unitOption)}
                     className={`rounded-md px-2.5 py-1 text-xs font-semibold uppercase transition ${
                       summaryUnit === unitOption
-                        ? "bg-gradient-to-r from-amber-400 via-orange-400 to-red-400 text-zinc-900"
+                        ? `${CLASS_GRADIENT_PRIMARY} text-zinc-900`
                         : "text-zinc-300 hover:bg-zinc-800"
                     }`}
                   >
@@ -1334,40 +1260,15 @@ export default function LogWorkoutPage() {
       )}
 
       {savedWorkoutOverlay && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-md overflow-hidden rounded-3xl border border-zinc-700/80 bg-zinc-900/90 px-7 py-8 text-center shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(245,158,11,0.24),transparent_40%),radial-gradient(circle_at_85%_78%,rgba(16,185,129,0.22),transparent_44%),radial-gradient(circle_at_68%_18%,rgba(59,130,246,0.2),transparent_44%)]" />
-
-            <div className="relative z-10">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-400/20 text-3xl text-emerald-300">
-                ✓
-              </div>
-              <p className="mt-4 text-xs font-semibold uppercase tracking-[0.2em] text-amber-300/85">
-                Workout Saved
-              </p>
-              <p className="mt-2 text-xl font-bold text-white">
-                {savedWorkoutOverlay.split.toUpperCase()} · {savedWorkoutOverlay.sessionDate}
-              </p>
-              <p className="mt-1 text-sm text-zinc-300">
-                {savedWorkoutOverlay.setCount} set{savedWorkoutOverlay.setCount === 1 ? "" : "s"} recorded.
-              </p>
-            </div>
-          </div>
-        </div>
+        <SavedWorkoutOverlay
+          split={savedWorkoutOverlay.split}
+          sessionDate={savedWorkoutOverlay.sessionDate}
+          setCount={savedWorkoutOverlay.setCount}
+        />
       )}
 
       {feedbackOverlay && (
-        <div className="pointer-events-none fixed inset-x-0 top-24 z-40 flex justify-center px-4">
-          <div
-            className={`max-w-xl rounded-xl border px-4 py-3 text-sm shadow-xl ${
-              feedbackOverlay.tone === "success"
-                ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200"
-                : "border-red-400/60 bg-red-500/15 text-red-200"
-            }`}
-          >
-            {feedbackOverlay.text}
-          </div>
-        </div>
+        <FeedbackOverlay text={feedbackOverlay.text} tone={feedbackOverlay.tone} />
       )}
     </div>
   );

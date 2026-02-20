@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { jsonError } from "@/lib/apiResponse";
+import { getInsightsAiEnv } from "@/lib/env.server";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -14,15 +16,11 @@ type InsightsContext = {
 };
 
 export async function POST(request: Request) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "Missing OPENAI_API_KEY. Add it to your environment to enable AI chat." },
-      { status: 500 }
-    );
+  let env: ReturnType<typeof getInsightsAiEnv>;
+  try {
+    env = getInsightsAiEnv();
+  } catch {
+    return jsonError("Missing OPENAI_API_KEY. Add it to your environment to enable AI chat.", 500);
   }
 
   try {
@@ -34,7 +32,7 @@ export async function POST(request: Request) {
 
     const question = body.question?.trim();
     if (!question) {
-      return NextResponse.json({ error: "Question is required." }, { status: 400 });
+      return jsonError("Question is required.", 400);
     }
 
     const context = body.context ?? {};
@@ -64,14 +62,14 @@ export async function POST(request: Request) {
       { role: "user", content: question },
     ];
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${env.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${env.apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: env.model,
         temperature: 0.3,
         messages,
       }),
@@ -79,10 +77,7 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      return NextResponse.json(
-        { error: `AI provider error: ${response.status} ${errorText}` },
-        { status: 502 }
-      );
+      return jsonError(`AI provider error: ${response.status} ${errorText}`, 502);
     }
 
     const data = (await response.json()) as {
@@ -91,14 +86,11 @@ export async function POST(request: Request) {
 
     const answer = data.choices?.[0]?.message?.content?.trim();
     if (!answer) {
-      return NextResponse.json({ error: "AI returned an empty response." }, { status: 502 });
+      return jsonError("AI returned an empty response.", 502);
     }
 
     return NextResponse.json({ answer });
   } catch {
-    return NextResponse.json(
-      { error: "Failed to process AI request." },
-      { status: 500 }
-    );
+    return jsonError("Failed to process AI request.", 500);
   }
 }
